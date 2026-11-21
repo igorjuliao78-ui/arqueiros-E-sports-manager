@@ -444,21 +444,21 @@ def normalize_name(value):
  value=unicodedata.normalize("NFKD",str(value)).encode("ascii","ignore").decode().casefold()
  return re.sub(r"[^a-z0-9]","",value)
 def parse_duel_ocr(text,roster_names=None):
- lines=[re.sub(r"\\s+"," ",x).strip() for x in text.splitlines() if x.strip()]
+ lines=[re.sub(r"\s+"," ",x).strip() for x in text.splitlines() if x.strip()]
  roster={normalize_name(x):x for x in (roster_names or []) if normalize_name(x)}
  scores=[];stats=[];team="Equipe adversária";aqr_side=0
  for line in lines:
-  clan=re.search(r"CL[ÃA]O?\\s*:?\\s*(\\d*)\\s*$",line,re.I)
+  clan=re.search(r"CL[ÃA]O?\s*:?\s*(\d*)\s*$",line,re.I)
   if clan:scores.append(int(clan.group(1)) if clan.group(1) else None)
-  tag=re.search(r"\\bAQR\\b\\s*[x×]\\s*([^\\s|]+)",line,re.I)
+  tag=re.search(r"\bAQR\b\s*[x×]\s*([^\s|]+)",line,re.I)
   if tag:team=tag.group(1).strip(".,:;");aqr_side=0
   else:
-   reverse=re.search(r"([^\\s|]+)\\s*[x×]\\s*\\bAQR\\b",line,re.I)
+   reverse=re.search(r"([^\s|]+)\s*[x×]\s*\bAQR\b",line,re.I)
    if reverse:team=reverse.group(1).strip(".,:;");aqr_side=1
    else:
-    fallback=re.search(r"ARQUEIROS\\s+E-SPORTS\\s*[x×]\\s*(.+)",line,re.I)
+    fallback=re.search(r"ARQUEIROS\s+E-SPORTS\s*[x×]\s*(.+)",line,re.I)
     if fallback and team=="Equipe adversária":team=fallback.group(1).strip()
-  duel=re.match(r"^\\s*(?:\\d+\\s*[.)➤>»:-]?\\s*)?(.+?)\\s+(\\d+)\\s*[x×]\\s*(\\d+)(?:\\s+(.+))?$",line,re.I)
+  duel=re.match(r"^\s*(?:\d+\s*[.)➤>»:-]?\s*)?(.+?)\s+(\d+)\s*[x×]\s*(\d+)(?:\s+(.+))?$",line,re.I)
   if not duel:continue
   left=duel.group(1).strip(" •➤».-:");right=(duel.group(4) or "").strip(" •➤».-:")
   left_key=normalize_name(left);right_key=normalize_name(right)
@@ -534,7 +534,7 @@ def process_duel_photo(chat,file_id):
   else:
    COMPETITION_PICK_STATE[str(chat)]=mid;lines.append("Ainda não há competição cadastrada. Use 🏅 Adicionar competição; depois informe o nome dela para associar este confronto.")
   lines.append(f"Para aprovar: /aprovar {mid} | rejeitar: /rejeitar {mid}")
-  send(chat,"\\n".join(lines),menu=True)
+  send(chat,"\n".join(lines),menu=True)
  except Exception as e:
   detail=str(e)
   if "tesseract" in detail.casefold() or "idioma OCR" in detail.casefold():
