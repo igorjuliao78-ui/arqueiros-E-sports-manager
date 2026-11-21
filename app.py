@@ -51,6 +51,7 @@ class Title(Base):
  season:Mapped[str]=mapped_column(String(40),default="")
  won_at:Mapped[datetime]=mapped_column(DateTime,default=datetime.utcnow)
  notes:Mapped[str]=mapped_column(Text,default="")
+ player_id:Mapped[Optional[int]]=mapped_column(ForeignKey("players.id"),nullable=True)
 class Match(Base):
  __tablename__="matches"
  id:Mapped[int]=mapped_column(primary_key=True)
@@ -94,6 +95,8 @@ with engine.begin() as conn:
  columns={x["name"] for x in inspect(engine).get_columns("players")}
  if "photo_file_id" not in columns: conn.execute(sql_text("ALTER TABLE players ADD COLUMN photo_file_id VARCHAR(255)"))
  if "status" not in columns: conn.execute(sql_text("ALTER TABLE players ADD COLUMN status VARCHAR(30) NOT NULL DEFAULT 'Ativo'"))
+ title_columns={x["name"] for x in inspect(engine).get_columns("titles")}
+ if "player_id" not in title_columns: conn.execute(sql_text("ALTER TABLE titles ADD COLUMN player_id INTEGER REFERENCES players(id)"))
 with SessionLocal() as s:
  existing={p.name.casefold() for p in s.query(Player).all()}
  for player_name in ROSTER:
@@ -195,7 +198,7 @@ def delete_comp(cid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
 async def add_title(request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
  d=await request.json()
  if not d.get("name","").strip():raise HTTPException(400,"Nome do título obrigatório")
- t=Title(name=d["name"].strip(),competition_id=d.get("competition_id") or None,season=d.get("season",""),notes=d.get("notes",""))
+ t=Title(name=d["name"].strip(),competition_id=d.get("competition_id") or None,season=d.get("season",""),notes=d.get("notes",""),player_id=d.get("player_id") or None)
  s.add(t);log(s,"title.won",t.name);s.commit();return {"ok":True,"id":t.id}
 @app.delete("/api/titles/{tid}")
 def delete_title(tid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
@@ -238,14 +241,9 @@ def match_action(mid:int,action:str,s:Session=Depends(get_db),_:bool=Depends(aut
  if action not in ("approve","reject"):raise HTTPException(400,"Ação inválida")
  m=s.get(Match,mid)
  if not m:raise HTTPException(404,"Partida não encontrada")
- if action=="approve" and m.home=="ARQUEIROS E-SPORTS":
-  if not m.competition_id:raise HTTPException(400,"Associe uma competição antes de aprovar.")
-  stats=s.query(MatchPlayerStat).filter(MatchPlayerStat.match_id==m.id).all()
-  if not stats:raise HTTPException(400,"Nenhum placar individual reconhecido; envie novamente o print.")
-  for st in stats:
-   if st.goals_for is None or st.goals_against is None:raise HTTPException(400,"Há placar individual incompleto.")
-   if not s.query(Player).filter(Player.active.is_(True),Player.name==st.player_name).first():raise HTTPException(400,"Jogador não reconhecido: "+st.player_name)
- if action=="approve" and (m.home_score is None or m.away_score is None):raise HTTPException(400,"Placar geral incompleto.")
+ if action=="approve":
+  error=match_approval_error(s,m)
+  if error:raise HTTPException(400,error)
  m.status="Aprovado" if action=="approve" else "Rejeitado";log(s,"match."+m.status.lower(),mid);s.commit();return {"ok":True}
 @app.post("/api/discipline")
 async def add_discipline(request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
@@ -306,7 +304,7 @@ def delete_notice(nid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
  log(s,"notice.deleted",n.title);s.delete(n);s.commit();return {"ok":True}
 @app.get("/api/export")
 def export(s:Session=Depends(get_db),_:bool=Depends(auth)):
- return {"players":[{"name":p.name,"nickname":p.nickname,"position":p.position,"team":p.team,"active":p.active} for p in s.query(Player).all()],"competitions":[{"name":c.name,"kind":c.kind,"season":c.season} for c in s.query(Competition).all()],"matches":[{"home":m.home,"away":m.away,"home_score":m.home_score,"away_score":m.away_score,"status":m.status} for m in s.query(Match).all()],"titles":[{"name":t.name,"season":t.season,"notes":t.notes} for t in s.query(Title).all()],"exported_at":datetime.now(timezone.utc).isoformat()}
+ return {"players":[{"name":p.name,"nickname":p.nickname,"position":p.position,"team":p.team,"active":p.active} for p in s.query(Player).all()],"competitions":[{"name":c.name,"kind":c.kind,"season":c.season} for c in s.query(Competition).all()],"matches":[{"home":m.home,"away":m.away,"home_score":m.home_score,"away_score":m.away_score,"status":m.status} for m in s.query(Match).all()],"titles":[{"name":t.name,"season":t.season,"notes":t.notes,"player_id":t.player_id} for t in s.query(Title).all()],"exported_at":datetime.now(timezone.utc).isoformat()}
 @app.get("/api/cards/ranking.png")
 def card(s:Session=Depends(get_db),_:bool=Depends(auth)):
  rows=ranking(s)[:10];fig,ax=plt.subplots(figsize=(9,max(3,1+len(rows)*.5)));fig.patch.set_facecolor("#111827");ax.set_facecolor("#111827")
@@ -326,6 +324,16 @@ def card_image(title,lines):
  y=.68;step=.62/max(len(lines),1)
  for line in lines:ax.text(.06,y,str(line),transform=ax.transAxes,color="white",fontsize=11,va="top",wrap=True);y-=step
  fig.tight_layout(pad=1.5);buf=io.BytesIO();fig.savefig(buf,format="png",dpi=150,facecolor=fig.get_facecolor());plt.close(fig);buf.seek(0);return buf
+def match_approval_error(s,m):
+ if m.home_score is None or m.away_score is None:return "Placar geral incompleto."
+ if m.home=="ARQUEIROS E-SPORTS":
+  if not m.competition_id:return "Associe uma competição antes de aprovar."
+  stats=s.query(MatchPlayerStat).filter(MatchPlayerStat.match_id==m.id).all()
+  if not stats:return "Nenhum placar individual reconhecido; envie novamente o print."
+  for st in stats:
+   if st.goals_for is None or st.goals_against is None:return "Há placar individual incompleto."
+   if not s.query(Player).filter(Player.active.is_(True),Player.name==st.player_name).first():return "Jogador não reconhecido: "+st.player_name
+ return None
 def player_metrics(s,p,competition_id=None):
  query=s.query(MatchPlayerStat).join(Match,Match.id==MatchPlayerStat.match_id).filter(MatchPlayerStat.player_name==p.name,Match.status=="Aprovado")
  if competition_id:query=query.filter(Match.competition_id==competition_id)
@@ -333,7 +341,7 @@ def player_metrics(s,p,competition_id=None):
  played=[g for g in games if g.goals_for is not None and g.goals_against is not None]
  wins=sum(g.goals_for>g.goals_against for g in played);draws=sum(g.goals_for==g.goals_against for g in played);losses=len(played)-wins-draws
  return {"games":len(played),"wins":wins,"draws":draws,"losses":losses,"goals":sum(g.goals_for or 0 for g in played),"conceded":sum(g.goals_against or 0 for g in played),"goal_difference":sum((g.goals_for or 0)-(g.goals_against or 0) for g in played),"win_rate":round(wins/len(played)*100,1) if played else 0}
-def weekly_player_image(p,metrics):
+def weekly_player_image(p,metrics,subtitle="DESEMPENHO INDIVIDUAL"):
  fig=plt.figure(figsize=(8,5),facecolor=TEAM_DARK);ax=fig.add_axes([0,0,1,1]);ax.set_facecolor(TEAM_DARK);ax.axis("off")
  ax.add_patch(plt.Rectangle((0,.94),1,.06,color=TEAM_RED,transform=ax.transAxes))
  ax.add_patch(plt.Rectangle((0,0),1,.035,color=TEAM_RED,transform=ax.transAxes))
@@ -352,14 +360,23 @@ def weekly_player_image(p,metrics):
   ax.add_patch(plt.Circle((.5,.70),.14,color="#292930",transform=ax.transAxes,ec=TEAM_METAL,lw=2))
   ax.text(.5,.70,(p.name[:1] or "?").upper(),ha="center",va="center",color="white",fontsize=38,fontweight="bold",transform=ax.transAxes)
  ax.text(.5,.46,p.name.upper(),ha="center",color="white",fontsize=22,fontweight="bold",transform=ax.transAxes)
- ax.text(.5,.38,"DESEMPENHO INDIVIDUAL",ha="center",color=TEAM_METAL,fontsize=11,transform=ax.transAxes)
- labels=[("JOGOS",metrics["games"]),("VITÓRIAS",metrics["wins"]),("EMPATES",metrics["draws"]),("DERROTAS",metrics["losses"]),("GOLS MARCADOS",metrics["goals"]),("GOLS SOFRIDOS",metrics["conceded"])]
+ ax.text(.5,.38,subtitle,ha="center",color=TEAM_METAL,fontsize=11,transform=ax.transAxes)
+ labels=[("JOGOS",metrics["games"]),("VITÓRIAS",metrics["wins"]),("EMPATES",metrics["draws"]),("DERROTAS",metrics["losses"]),("GOLS MARCADOS",metrics["goals"]),("GOLS SOFRIDOS",metrics["conceded"]),("SALDO",metrics["goal_difference"]),("APROVEITAMENTO",str(metrics["win_rate"])+"%")]
  for i,(label,value) in enumerate(labels):
-  x=.18+(i%3)*.32;y=.25-(i//3)*.12
+  x=.12+(i%4)*.25;y=.25-(i//4)*.13
   ax.text(x,y,label,ha="center",color=TEAM_METAL,fontsize=9,transform=ax.transAxes)
   ax.text(x,y-.055,str(value),ha="center",color="white",fontsize=18,fontweight="bold",transform=ax.transAxes)
  ax.text(.5,.06,"ARQUEIROS E-SPORTS  •  RELATÓRIO SEMANAL",ha="center",color=TEAM_RED,fontsize=10,fontweight="bold",transform=ax.transAxes)
  buf=io.BytesIO();fig.savefig(buf,format="png",dpi=160,facecolor=fig.get_facecolor());plt.close(fig);buf.seek(0);return buf
+@app.get("/api/cards/player/{pid}.png")
+def player_card_image(pid:int,competition_id:Optional[int]=None,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ p=s.get(Player,pid)
+ if not p:raise HTTPException(404,"Jogador não encontrado")
+ if competition_id and not s.get(Competition,competition_id):raise HTTPException(404,"Competição não encontrada")
+ subtitle="DESEMPENHO INDIVIDUAL"
+ if competition_id:subtitle="DESEMPENHO NA COMPETIÇÃO #"+str(competition_id)
+ buf=weekly_player_image(p,player_metrics(s,p,competition_id),subtitle)
+ return StreamingResponse(buf,media_type="image/png")
 @app.post("/internal/weekly-cards")
 def weekly_cards(x_weekly_token:Optional[str]=Header(default=None)):
  if not WEEKLY_TOKEN or not secrets.compare_digest(x_weekly_token or "",WEEKLY_TOKEN):raise HTTPException(403,"Token de relatório inválido")
@@ -466,7 +483,11 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
    action,mid=data.split(":");mid=int(mid)
    with SessionLocal() as s:
     m=s.get(Match,mid)
-    if m and m.status=="Pendente":m.status="Aprovado" if action=="approve_duel" else "Rejeitado";log(s,"match."+m.status.lower(),mid);s.commit();send(cqchat,f"Confronto #{mid} {m.status.lower()}.",menu=True)
+    if m and m.status=="Pendente":
+     error=match_approval_error(s,m) if action=="approve_duel" else None
+     if error:send(cqchat,f"Não foi possível aprovar o confronto #{mid}: {error}",menu=True)
+     else:
+      m.status="Aprovado" if action=="approve_duel" else "Rejeitado";log(s,"match."+m.status.lower(),mid);s.commit();send(cqchat,f"Confronto #{mid} {m.status.lower()}.",menu=True)
   requests.post("https://api.telegram.org/bot"+BOT+"/answerCallbackQuery",json={"callback_query_id":cq["id"]},timeout=10)
   return {"ok":True}
  msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));raw_text=msg.get("text","").strip();parts=raw_text.split()
@@ -632,10 +653,7 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
     m=s.get(Match,int(parts[1]))
     if not m:out="Resultado não encontrado."
     elif m.status!="Pendente":out=f"Esse resultado já está: {m.status}."
-    elif cmd=="/aprovar" and (m.home_score is None or m.away_score is None):out="Não é possível aprovar: o placar geral dos dois clãs precisa estar preenchido na descrição."
-    elif cmd=="/aprovar" and not m.competition_id:out="Não é possível aprovar: falta associar este confronto a uma competição."
-    elif cmd=="/aprovar" and s.query(MatchPlayerStat).filter(MatchPlayerStat.match_id==m.id).count()==0:out="Não é possível aprovar: nenhum placar individual foi reconhecido."
-    elif cmd=="/aprovar" and any(not s.query(Player).filter(Player.active.is_(True),Player.name==st.player_name).first() for st in s.query(MatchPlayerStat).filter(MatchPlayerStat.match_id==m.id).all()):out="Não é possível aprovar: há jogador não reconhecido. Corrija o nome antes de confirmar."
+    elif cmd=="/aprovar" and match_approval_error(s,m):out="Não é possível aprovar: "+match_approval_error(s,m)
     else:
      m.status="Aprovado" if cmd=="/aprovar" else "Rejeitado"
      log(s,"match."+m.status.lower(),m.id);s.commit()
