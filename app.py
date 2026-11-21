@@ -29,6 +29,7 @@ class Player(Base):
  position:Mapped[str]=mapped_column(String(50),default="")
  team:Mapped[str]=mapped_column(String(100),default="")
  photo_file_id:Mapped[Optional[str]]=mapped_column(String(255),nullable=True)
+ telegram_chat_id:Mapped[Optional[str]]=mapped_column(String(40),nullable=True)
  active:Mapped[bool]=mapped_column(Boolean,default=True)
  status:Mapped[str]=mapped_column(String(30),default="Ativo")
 class Notice(Base):
@@ -94,6 +95,7 @@ Base.metadata.create_all(engine)
 with engine.begin() as conn:
  columns={x["name"] for x in inspect(engine).get_columns("players")}
  if "photo_file_id" not in columns: conn.execute(sql_text("ALTER TABLE players ADD COLUMN photo_file_id VARCHAR(255)"))
+ if "telegram_chat_id" not in columns: conn.execute(sql_text("ALTER TABLE players ADD COLUMN telegram_chat_id VARCHAR(40)"))
  if "status" not in columns: conn.execute(sql_text("ALTER TABLE players ADD COLUMN status VARCHAR(30) NOT NULL DEFAULT 'Ativo'"))
  title_columns={x["name"] for x in inspect(engine).get_columns("titles")}
  if "player_id" not in title_columns: conn.execute(sql_text("ALTER TABLE titles ADD COLUMN player_id INTEGER REFERENCES players(id)"))
@@ -152,7 +154,7 @@ def api_dashboard(s:Session=Depends(get_db),_:bool=Depends(auth)): return dashbo
 async def add_player(request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
  d=await request.json()
  if not d.get("name","").strip(): raise HTTPException(400,"Nome obrigatório")
- p=Player(name=d["name"].strip(),nickname=d.get("nickname",""),position=d.get("position",""),team=d.get("team",""))
+ p=Player(name=d["name"].strip(),nickname=d.get("nickname",""),position=d.get("position",""),team=d.get("team",""),telegram_chat_id=str(d.get("telegram_chat_id","")).strip() or None)
  s.add(p);log(s,"player.created",p.name);s.commit();return {"ok":True,"id":p.id}
 @app.post("/api/competitions")
 async def add_comp(request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
@@ -165,7 +167,7 @@ async def update_player(pid:int,request:Request,s:Session=Depends(get_db),_:bool
  d=await request.json();p=s.get(Player,pid)
  if not p:raise HTTPException(404,"Jogador não encontrado")
  old=p.name
- for key in ("name","nickname","position","team"):
+ for key in ("name","nickname","position","team","telegram_chat_id"):
   if key in d:setattr(p,key,str(d[key]).strip())
  if not p.name:raise HTTPException(400,"Nome obrigatório")
  if old!=p.name:s.query(MatchPlayerStat).filter(MatchPlayerStat.player_name==old).update({MatchPlayerStat.player_name:p.name})
@@ -409,12 +411,17 @@ def weekly_cards(x_weekly_token:Optional[str]=Header(default=None)):
  sent=0
  with SessionLocal() as s:
   players=s.query(Player).filter(Player.active.is_(True)).order_by(Player.name).all()
-  cards=[(p.name,weekly_player_image(p,player_metrics(s,p))) for p in players]
+  cards=[(p,weekly_player_image(p,player_metrics(s,p))) for p in players]
  for admin in ADMINS:
-  for name,buf in cards:
-   requests.post("https://api.telegram.org/bot"+BOT+"/sendPhoto",data={"chat_id":admin,"caption":"🏹 Relatório semanal — "+name},files={"photo":(f"player-{name}.png",buf.getvalue(),"image/png")},timeout=30).raise_for_status()
+  for player,buf in cards:
+   requests.post("https://api.telegram.org/bot"+BOT+"/sendPhoto",data={"chat_id":admin,"caption":"🏹 Relatório semanal — "+player.name},files={"photo":(f"player-{player.name}.png",buf.getvalue(),"image/png")},timeout=30).raise_for_status()
    sent+=1
- return {"ok":True,"players":len(cards),"cards_sent":sent}
+ delivered=0
+ for player,buf in cards:
+  if player.telegram_chat_id:
+   requests.post("https://api.telegram.org/bot"+BOT+"/sendPhoto",data={"chat_id":player.telegram_chat_id,"caption":"🏹 Seu desempenho semanal — "+player.name},files={"photo":(f"player-{player.name}.png",buf.getvalue(),"image/png")},timeout=30).raise_for_status()
+   delivered+=1
+ return {"ok":True,"players":len(cards),"cards_sent_to_admins":sent,"cards_sent_to_players":delivered,"players_without_telegram_id":len(cards)-delivered}
 
 def send(chat,text,menu=False,keyboard=None):
  if not BOT:return
