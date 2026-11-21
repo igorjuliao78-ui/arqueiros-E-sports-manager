@@ -327,7 +327,7 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
     if exists:PLAYER_ADD_STATE.pop(uid,None);send(chat,f"⚠️ {value} já está cadastrado.",menu=True)
     else:
      p=Player(name=value);s.add(p);log(s,"player.created.telegram",value);s.commit();PLAYER_ADD_STATE[uid]={"action":"photo","player_id":p.id}
-     send(chat,f"Jogador {value} cadastrado. Agora envie a foto dele ou digite /pular para usar o ícone padrão.")
+     send(chat,f"Jogador {value} cadastrado. Envie a foto ou escolha pular para usar o ícone padrão.",menu=True,keyboard=[[{"text":"⏭️ Pular foto"}],[{"text":"❌ Cancelar"}]])
    return {"ok":True}
   if state.get("action")=="photo" and value=="/pular":
    PLAYER_ADD_STATE.pop(uid,None);send(chat,"Cadastro concluído. O jogador ficará com ícone até receber uma foto.",menu=True);return {"ok":True}
