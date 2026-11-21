@@ -156,17 +156,40 @@ def send(chat,text):
 @app.post("/telegram/webhook")
 async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]=Header(default=None)):
  if HOOK and not secrets.compare_digest(x_telegram_bot_api_secret_token or "",HOOK):raise HTTPException(403,"Webhook inválido")
- update=await request.json();msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));text=msg.get("text","").split()
+ update=await request.json();msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));parts=msg.get("text","").strip().split()
  if not chat:return {"ok":True}
- if uid not in ADMINS:send(chat,"Acesso restrito: seu ID não está autorizado.");return {"ok":True}
- cmd=text[0].lower() if text else ""
+ cmd=parts[0].split("@")[0].lower() if parts else ""
+ # /id e /start são públicos para facilitar a configuração inicial; os demais comandos exigem autorização.
+ if cmd=="/id":
+  send(chat,f"Seu ID do Telegram é: {uid}\nEnvie esse número ao administrador para liberar o acesso.")
+  return {"ok":True}
+ if cmd=="/start":
+  send(chat,"🏹 ARQUEIROS E-SPORTS MANAGER\nPara liberar comandos administrativos, envie seu ID ao responsável. Use /id para consultar seu ID.")
+  return {"ok":True}
+ if uid not in ADMINS:
+  send(chat,"Acesso restrito. Use /id e peça ao administrador para liberar seu usuário.")
+  return {"ok":True}
  with SessionLocal() as s:
   d=dashboard(s)
-  if cmd in ("/start","/help"):out="🏹 ARQUEIROS MANAGER\n/stats - resumo\n/jogadores - jogadores ativos\n/pendentes - resultados pendentes\n/ranking - classificação"
+  if cmd in ("/help","/comandos"):
+   out="🏹 ARQUEIROS MANAGER\n/stats - resumo geral\n/jogadores - lista de jogadores ativos\n/pendentes - resultados aguardando aprovação\n/aprovar ID - aprova resultado\n/rejeitar ID - rejeita resultado\n/ranking - classificação"
   elif cmd=="/stats":out=f"Jogadores: {d['players']}\nCompetições: {d['competitions']}\nPartidas aprovadas: {d['approved']}\nPendentes: {d['pending']}"
-  elif cmd=="/jogadores":out=f"Jogadores ativos: {d['players']}"
+  elif cmd=="/jogadores":
+   rows=s.query(Player).filter(Player.active.is_(True)).order_by(Player.name).all()
+   out="\n".join(f"• {p.name}"+(f" (@{p.nickname})" if p.nickname else "") for p in rows) or "Nenhum jogador cadastrado."
   elif cmd=="/pendentes":
-   rows=s.query(Match).filter(Match.status=="Pendente").all();out="\n".join(f"#{m.id} {m.home} x {m.away} ({m.home_score}:{m.away_score})" for m in rows) or "Nenhum resultado pendente."
+   rows=s.query(Match).filter(Match.status=="Pendente").order_by(Match.id).all()
+   out="\n".join(f"#{m.id} {m.home} {m.home_score} x {m.away_score} {m.away}" for m in rows) or "Nenhum resultado pendente."
+  elif cmd in ("/aprovar","/rejeitar"):
+   if len(parts)!=2 or not parts[1].isdigit():out=f"Uso: {cmd} ID (consulte /pendentes)"
+   else:
+    m=s.get(Match,int(parts[1]))
+    if not m:out="Resultado não encontrado."
+    elif m.status!="Pendente":out=f"Esse resultado já está: {m.status}."
+    else:
+     m.status="Aprovado" if cmd=="/aprovar" else "Rejeitado"
+     log(s,"match."+m.status.lower(),m.id);s.commit()
+     out=f"Resultado #{m.id} {m.status.lower()} com sucesso."
   elif cmd=="/ranking":out="\n".join(f"{i}. {r['team']} — {r['PTS']} pts" for i,r in enumerate(d["ranking"],1)) or "Sem resultados aprovados."
   else:out="Comando não reconhecido. Use /help."
  send(chat,out);return {"ok":True}
