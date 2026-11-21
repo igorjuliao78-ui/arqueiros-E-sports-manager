@@ -233,7 +233,7 @@ def send(chat,text,menu=False,keyboard=None):
  if not BOT:return
  buf=card_image("ARQUEIROS E-SPORTS",str(text).splitlines() or [" "])
  requests.post("https://api.telegram.org/bot"+BOT+"/sendPhoto",data={"chat_id":chat,"caption":"🏹 "+str(text)[:900]},files={"photo":("arqueiros.png",buf.getvalue(),"image/png")},timeout=30).raise_for_status()
- keyboard=keyboard or ([[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"➕ Adicionar jogador"},{"text":"🏅 Adicionar competição"}],[{"text":"✏️ Editar jogador"},{"text":"🗑️ Excluir jogador"}],[{"text":"📋 Competições"},{"text":"❔ Ajuda"}],[{"text":"⬅️ Fechar menu"}]] if menu else [[{"text":"🏹 MENU"}]])
+ keyboard=keyboard or ([[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"➕ Adicionar jogador"},{"text":"🏅 Adicionar competição"}],[{"text":"✏️ Editar jogador"},{"text":"🗑️ Excluir jogador"}],[{"text":"📋 Competições"},{"text":"🪪 Card do jogador"}],[{"text":"❔ Ajuda"},{"text":"⬅️ Fechar menu"}]] if menu else [[{"text":"🏹 MENU"}]])
  payload={"chat_id":chat,"text":"🏹 Menu aberto. Escolha uma opção:" if menu else "🏹 Toque em MENU para abrir as opções.","reply_markup":{"keyboard":keyboard,"resize_keyboard":True,"is_persistent":True}}
  requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json=payload,timeout=15).raise_for_status()
 def normalize_name(value):
@@ -277,6 +277,7 @@ def process_duel_photo(chat,file_id):
  except Exception as e:send(chat,"Falha na leitura da imagem. Tente novamente com mais nitidez. "+str(e)[:120])
 PLAYER_ADD_STATE={}
 PLAYER_EDIT_STATE={}
+PLAYER_CARD_STATE=set()
 COMPETITION_ADD_STATE=set()
 ROSTER=["Jesus「ΔΩŘ」","Carlos","CDS","SM7","Jackson","Rony","Julião","Wellinson","Guiih S.","Jefferson","Marinhoox","Diogo Lima","Miquéias","Eltom Pereira","Joab Junior","Ezequiel","Brunno Bass","Davi","Trinity","Adriel","Vitor","Pereira","Léo","Mateus","Gustavo"]
 @app.post("/telegram/webhook")
@@ -295,7 +296,7 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
  msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));raw_text=msg.get("text","").strip();parts=raw_text.split()
  if not chat:return {"ok":True}
  cmd=raw_text.split("@")[0].lower() if raw_text.startswith("/") else raw_text
- cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","🏅 Adicionar competição":"/addcompetition","✏️ Editar jogador":"/editplayer","🗑️ Excluir jogador":"/deleteplayer","📋 Competições":"/competitions","❔ Ajuda":"/help","🏹 Menu":"/menu","🏹 MENU":"/menu","⬅️ Fechar menu":"/closemenu","📷 Alterar foto":"/foto","🗑️ Retirar da equipe":"/excluir","⏭️ Pular foto":"/pular","❌ Cancelar":"/cancelar","✅ Confirmar exclusão":"EXCLUIR"}.get(cmd,cmd)
+ cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","🏅 Adicionar competição":"/addcompetition","✏️ Editar jogador":"/editplayer","🗑️ Excluir jogador":"/deleteplayer","📋 Competições":"/competitions","🪪 Card do jogador":"/playercard","❔ Ajuda":"/help","🏹 Menu":"/menu","🏹 MENU":"/menu","⬅️ Fechar menu":"/closemenu","📷 Alterar foto":"/foto","🗑️ Retirar da equipe":"/excluir","⏭️ Pular foto":"/pular","❌ Cancelar":"/cancelar","✅ Confirmar exclusão":"EXCLUIR"}.get(cmd,cmd)
  # /id e /start são públicos para facilitar a configuração inicial; os demais comandos exigem autorização.
  if cmd=="/id":
   send(chat,f"Seu ID do Telegram é: {uid}\nEnvie esse número ao administrador para liberar o acesso.")
@@ -331,6 +332,15 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
    return {"ok":True}
   if state.get("action")=="photo" and value=="/pular":
    PLAYER_ADD_STATE.pop(uid,None);send(chat,"Cadastro concluído. O jogador ficará com ícone até receber uma foto.",menu=True);return {"ok":True}
+ if uid in PLAYER_CARD_STATE and raw_text and not raw_text.startswith("/"):
+  with SessionLocal() as s:
+   p=s.query(Player).filter(Player.name.ilike(raw_text.strip()),Player.active.is_(True)).first()
+   if not p:
+    send(chat,"Não encontrei esse jogador ativo. Confira o nome e tente novamente, ou toque em ❌ Cancelar.",menu=True,keyboard=[[{"text":"❌ Cancelar"}]])
+    return {"ok":True}
+   metrics=player_metrics(s,p);buf=weekly_player_image(p,metrics);name=p.name
+  requests.post("https://api.telegram.org/bot"+BOT+"/sendPhoto",data={"chat_id":chat,"caption":"🏹 Card individual — "+name},files={"photo":("arqueiros-"+str(name)+".png",buf.getvalue(),"image/png")},timeout=30).raise_for_status()
+  PLAYER_CARD_STATE.discard(uid);send(chat,"Card de "+name+" enviado.",menu=True);return {"ok":True}
  if uid in PLAYER_EDIT_STATE:
   state=PLAYER_EDIT_STATE[uid];value=raw_text.strip()
   if state.get("action")=="lookup" and value and not value.startswith("/"):
@@ -361,11 +371,16 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
    comp=Competition(name=raw_text.strip(),kind="Competição");s.add(comp);log(s,"competition.created.telegram",comp.name);s.commit();name=comp.name
   COMPETITION_ADD_STATE.discard(uid);send(chat,f"Competição {name} cadastrada!",menu=True);return {"ok":True}
  if cmd=="/cancelar":
-  PLAYER_ADD_STATE.pop(uid,None);PLAYER_EDIT_STATE.pop(uid,None);COMPETITION_ADD_STATE.discard(uid);send(chat,"Operação cancelada.",menu=True);return {"ok":True}
+  PLAYER_ADD_STATE.pop(uid,None);PLAYER_EDIT_STATE.pop(uid,None);PLAYER_CARD_STATE.discard(uid);COMPETITION_ADD_STATE.discard(uid);send(chat,"Operação cancelada.",menu=True);return {"ok":True}
  if cmd=="/addplayer":
   PLAYER_ADD_STATE[uid]={"action":"name"};send(chat,"➕ Adicionar jogador\nEnvie o nome do jogador.");return {"ok":True}
  if cmd=="/addcompetition":
   COMPETITION_ADD_STATE.add(uid);send(chat,"🏅 Adicionar competição\nEnvie o nome da competição.");return {"ok":True}
+ if cmd=="/playercard":
+  if uid not in ADMINS:
+   send(chat,"Apenas administradores podem solicitar cards individuais.")
+   return {"ok":True}
+  PLAYER_CARD_STATE.add(uid);send(chat,"🪪 Card do jogador\nDigite o nome do jogador para gerar o card atualizado.",menu=True,keyboard=[[{"text":"❌ Cancelar"}]]);return {"ok":True}
  if cmd=="/editplayer":
   PLAYER_EDIT_STATE[uid]={"action":"lookup"};send(chat,"✏️ Editar jogador\nDigite o nome atual do jogador.");return {"ok":True}
  if cmd=="/deleteplayer":
