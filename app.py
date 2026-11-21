@@ -395,6 +395,16 @@ def weekly_player_image(p,metrics,subtitle="DESEMPENHO INDIVIDUAL"):
   ax.text(x,y-.055,str(value),ha="center",color="white",fontsize=18,fontweight="bold",transform=ax.transAxes)
  ax.text(.5,.06,"ARQUEIROS E-SPORTS  •  RELATÓRIO SEMANAL",ha="center",color=TEAM_RED,fontsize=10,fontweight="bold",transform=ax.transAxes)
  buf=io.BytesIO();fig.savefig(buf,format="png",dpi=160,facecolor=fig.get_facecolor());plt.close(fig);buf.seek(0);return buf
+@app.get("/api/cards/team.png")
+def team_card_image(s:Session=Depends(get_db),_:bool=Depends(auth)):
+ matches=s.query(Match).filter(Match.status=="Aprovado",Match.home=="ARQUEIROS E-SPORTS").all()
+ wins=sum(1 for m in matches if (m.home_score or 0)>(m.away_score or 0))
+ draws=sum(1 for m in matches if (m.home_score or 0)==(m.away_score or 0))
+ losses=sum(1 for m in matches if (m.home_score or 0)<(m.away_score or 0))
+ goals=sum(m.home_score or 0 for m in matches);conceded=sum(m.away_score or 0 for m in matches)
+ titles=s.query(Title).filter(Title.player_id.is_(None)).count()
+ lines=[f"JOGOS: {len(matches)}",f"VITÓRIAS: {wins}",f"EMPATES: {draws}",f"DERROTAS: {losses}",f"GOLS MARCADOS: {goals}",f"GOLS SOFRIDOS: {conceded}",f"TÍTULOS: {titles}"]
+ return StreamingResponse(card_image("ARQUEIROS E-SPORTS",lines),media_type="image/png")
 @app.get("/api/cards/player/{pid}.png")
 def player_card_image(pid:int,competition_id:Optional[int]=None,s:Session=Depends(get_db),_:bool=Depends(auth)):
  p=s.get(Player,pid)
@@ -427,7 +437,7 @@ def send(chat,text,menu=False,keyboard=None):
  if not BOT:return
  buf=card_image("ARQUEIROS E-SPORTS",str(text).splitlines() or [" "])
  requests.post("https://api.telegram.org/bot"+BOT+"/sendPhoto",data={"chat_id":chat,"caption":"🏹 "+str(text)[:900]},files={"photo":("arqueiros.png",buf.getvalue(),"image/png")},timeout=30).raise_for_status()
- keyboard=keyboard or ([[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"➕ Adicionar jogador"},{"text":"🏅 Adicionar competição"}],[{"text":"✏️ Editar jogador"},{"text":"🗑️ Excluir jogador"}],[{"text":"📋 Competições"},{"text":"🪪 Card do jogador"}],[{"text":"❔ Ajuda"},{"text":"⬅️ Fechar menu"}]] if menu else [[{"text":"🏹 MENU"}]])
+ keyboard=keyboard or ([[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"➕ Adicionar jogador"},{"text":"🏅 Adicionar competição"}],[{"text":"✏️ Editar jogador"},{"text":"🗑️ Excluir jogador"}],[{"text":"✏️ Editar competição"},{"text":"🗑️ Excluir competição"}],[{"text":"📋 Competições"},{"text":"🏆 Títulos"}],[{"text":"🪪 Card do jogador"},{"text":"🛡️ Card da equipe"}],[{"text":"📚 Histórico"},{"text":"📈 Estatísticas por competição"}],[{"text":"❔ Ajuda"},{"text":"⬅️ Fechar menu"}]] if menu else [[{"text":"🏹 MENU"}]])
  payload={"chat_id":chat,"text":"🏹 Menu aberto. Escolha uma opção:" if menu else "🏹 Toque em MENU para abrir as opções.","reply_markup":{"keyboard":keyboard,"resize_keyboard":True,"is_persistent":True}}
  requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json=payload,timeout=15).raise_for_status()
 def normalize_name(value):
@@ -525,7 +535,7 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
  msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));raw_text=msg.get("text","").strip();parts=raw_text.split()
  if not chat:return {"ok":True}
  cmd=raw_text.split("@")[0].lower() if raw_text.startswith("/") else raw_text
- cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","🏅 Adicionar competição":"/addcompetition","✏️ Editar jogador":"/editplayer","🗑️ Excluir jogador":"/deleteplayer","📋 Competições":"/competitions","🪪 Card do jogador":"/playercard","❔ Ajuda":"/help","🏹 Menu":"/menu","🏹 MENU":"/menu","⬅️ Fechar menu":"/closemenu","📷 Alterar foto":"/foto","🗑️ Retirar da equipe":"/excluir","⏭️ Pular foto":"/pular","❌ Cancelar":"/cancelar","✅ Confirmar exclusão":"EXCLUIR"}.get(cmd,cmd)
+ cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","🏅 Adicionar competição":"/addcompetition","✏️ Editar jogador":"/editplayer","🗑️ Excluir jogador":"/deleteplayer","📋 Competições":"/competitions","🪪 Card do jogador":"/playercard","✏️ Editar competição":"/competitions","🗑️ Excluir competição":"/competitions","🏆 Títulos":"/titles","🛡️ Card da equipe":"/teamcard","📚 Histórico":"/history","📈 Estatísticas por competição":"/competitionstats","❔ Ajuda":"/help","🏹 Menu":"/menu","🏹 MENU":"/menu","⬅️ Fechar menu":"/closemenu","📷 Alterar foto":"/foto","🗑️ Retirar da equipe":"/excluir","⏭️ Pular foto":"/pular","❌ Cancelar":"/cancelar","✅ Confirmar exclusão":"EXCLUIR"}.get(cmd,cmd)
  # /id e /start são públicos para facilitar a configuração inicial; os demais comandos exigem autorização.
  if cmd=="/id":
   send(chat,f"Seu ID do Telegram é: {uid}\nEnvie esse número ao administrador para liberar o acesso.")
@@ -637,6 +647,29 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
   PLAYER_EDIT_STATE[uid]={"action":"lookup"};send(chat,"✏️ Editar jogador\nDigite o nome atual do jogador.");return {"ok":True}
  if cmd=="/deleteplayer":
   PLAYER_EDIT_STATE[uid]={"action":"lookup"};send(chat,"🗑️ Excluir jogador\nDigite o nome do jogador que deseja retirar da equipe.");return {"ok":True}
+ if cmd=="/teamcard":
+  with SessionLocal() as s:
+   rows=s.query(Match).filter(Match.status=="Aprovado",Match.home=="ARQUEIROS E-SPORTS").all()
+   wins=sum(1 for m in rows if (m.home_score or 0)>(m.away_score or 0));draws=sum(1 for m in rows if (m.home_score or 0)==(m.away_score or 0));losses=len(rows)-wins-draws
+   goals=sum(m.home_score or 0 for m in rows);conceded=sum(m.away_score or 0 for m in rows);titles=s.query(Title).filter(Title.player_id.is_(None)).count()
+   buf=card_image("NOSSA TRAJETÓRIA",[f"JOGOS: {len(rows)}",f"VITÓRIAS: {wins}",f"EMPATES: {draws}",f"DERROTAS: {losses}",f"GOLS MARCADOS: {goals}",f"GOLS SOFRIDOS: {conceded}",f"TÍTULOS: {titles}"])
+  requests.post("https://api.telegram.org/bot"+BOT+"/sendPhoto",data={"chat_id":chat,"caption":"🛡️ Card oficial da equipe"},files={"photo":("arqueiros-equipe.png",buf.getvalue(),"image/png")},timeout=30).raise_for_status()
+  send(chat,"Card da equipe enviado.",menu=True);return {"ok":True}
+ if cmd=="/history":
+  with SessionLocal() as s:
+   rows=s.query(Match).order_by(Match.id.desc()).limit(20).all()
+   out="\n".join(f"#{m.id} {m.home} {m.home_score if m.home_score is not None else '?'} x {m.away_score if m.away_score is not None else '?'} {m.away} — {m.status}" for m in rows) or "Nenhum confronto registrado."
+  send(chat,out,menu=True);return {"ok":True}
+ if cmd=="/competitionstats":
+  with SessionLocal() as s:
+   rows=s.query(Competition).order_by(Competition.name).all()
+   out="\n".join(f"{c.name}: {s.query(Match).filter(Match.competition_id==c.id,Match.status=='Aprovado').count()} confrontos aprovados" for c in rows) or "Nenhuma competição cadastrada."
+  send(chat,"📈 ESTATÍSTICAS POR COMPETIÇÃO\n"+out,menu=True);return {"ok":True}
+ if cmd=="/titles":
+  with SessionLocal() as s:
+   rows=s.query(Title).order_by(Title.won_at.desc()).all()
+   out="\n".join("🏆 "+t.name+" ("+(t.season or "sem temporada")+")"+(" — Individual" if t.player_id else " — Equipe") for t in rows) or "Nenhum título registrado."
+  send(chat,out,menu=True);return {"ok":True}
  if cmd=="/competitions":
   with SessionLocal() as s:
    rows=s.query(Competition).order_by(Competition.name).all()
