@@ -14,6 +14,10 @@ Sistema de gestão da Arqueiros E-Sports com painel administrativo e bot do Tele
 - Registro disciplinar e recrutamento.
 - Bot Telegram com comandos administrativos.
 - Exportação JSON, histórico de auditoria e card PNG do ranking.
+- Proteção contra possíveis confrontos duplicados (janela de 24 horas).
+- Ranking e relatórios por competição.
+- Relatório mensal de resultados.
+- Mural de comunicados administrativos, com envio opcional ao grupo Telegram.
 
 ## Publicação no Render
 
@@ -40,6 +44,7 @@ No serviço do Render, abra **Environment** (ou **Environment Variables**) e adi
 | `TELEGRAM_ADMIN_IDS` | Seu ID numérico do Telegram. Pode incluir vários IDs separados por vírgula. |
 | `TELEGRAM_WEBHOOK_SECRET` | Segredo aleatório contendo somente letras, números, _ ou -. |
 | `DATABASE_URL` | URL de conexão PostgreSQL, se você criou um banco PostgreSQL. |
+| `TEAM_CHAT_ID` | (Opcional) ID do grupo Telegram da equipe para receber comunicados publicados no painel. |
 
 Para produção, recomendamos criar um PostgreSQL no Render e colocar em `DATABASE_URL` a **Internal Database URL** do banco, se o banco e o serviço estiverem na mesma região. Não publique essa URL.
 
@@ -108,3 +113,24 @@ Sem `DATABASE_URL`, o projeto usa SQLite local. Em produção, use PostgreSQL pe
 - Restrinja `TELEGRAM_ADMIN_IDS` a administradores confiáveis.
 - Use segredos diferentes para o painel e para o webhook.
 - Se o token do bot vazar, gere outro pelo @BotFather.
+
+## Backup automático do banco
+
+O repositório inclui o workflow `.github/workflows/daily-database-backup.yml`, que gera um backup diário do PostgreSQL e guarda o arquivo como artefato do GitHub Actions por 30 dias.
+
+Para ativar:
+1. No GitHub, abra o repositório e entre em **Settings** > **Secrets and variables** > **Actions**.
+2. Clique em **New repository secret**.
+3. Nome: `DATABASE_URL`.
+4. Valor: use a **External Database URL** do PostgreSQL no Render (não a URL interna).
+5. Salve. O workflow também pode ser iniciado manualmente na aba **Actions**.
+
+O arquivo fica em **Actions** > execução do backup > **Artifacts**. Faça testes periódicos de restauração; um backup só é útil se puder ser restaurado.
+
+## Comunicados no grupo Telegram
+
+Para publicar comunicados do painel também em um grupo, adicione o bot ao grupo e configure `TEAM_CHAT_ID` nas variáveis de ambiente do serviço Render. Sem essa variável, o comunicado fica salvo no painel, mas não é enviado ao Telegram.
+
+## Limites de segurança e próximos ajustes
+
+O painel atual usa um token administrativo compartilhado. Portanto, ainda não há contas individuais com permissões diferentes por administrador. Não compartilhe esse token; a implantação de perfis individuais exige uma tela de autenticação e gestão de contas antes de liberar permissões granulares.
