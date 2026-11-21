@@ -283,8 +283,12 @@ def process_duel_photo(chat,file_id):
   for row in parsed["stats"]:lines.append(f"{row['player']} — {row['gf']} x {row['ga']}")
   if unmatched:lines.append("NOMES NÃO RECONHECIDOS: "+", ".join(unmatched)+" — não aprove até corrigir.")
   if comp:lines.append("Competição associada: "+comp.name)
-  elif len(comps)>1:lines.append("Há várias competições cadastradas. Informe qual competição corresponde a este confronto.")
-  else:lines.append("Não identifiquei a competição. Cadastre a competição e informe qual corresponde a este confronto.")
+  elif len(comps)>1:
+   COMPETITION_PICK_STATE[str(chat)]=mid
+   lines.append("Qual competição corresponde a este confronto? Responda com o nome exatamente como aparece no cadastro.")
+  else:
+   COMPETITION_PICK_STATE[str(chat)]=mid
+   lines.append("Ainda não há competição cadastrada. Use 🏅 Adicionar competição; depois informe o nome dela para associar este confronto.")
   lines.append(f"Para aprovar: /aprovar {mid} | rejeitar: /rejeitar {mid}")
   send(chat,"\n".join(lines),menu=True)
  except Exception as e:
@@ -293,6 +297,7 @@ PLAYER_ADD_STATE={}
 PLAYER_EDIT_STATE={}
 PLAYER_CARD_STATE=set()
 COMPETITION_ADD_STATE=set()
+COMPETITION_PICK_STATE={}
 ROSTER=["Jesus「ΔΩŘ」","Carlos","CDS","SM7","Jackson","Rony","Julião","Wellinson","Guiih S.","Jefferson","Marinhoox","Diogo Lima","Miquéias","Eltom Pereira","Joab Junior","Ezequiel","Brunno Bass","Davi","Trinity","Adriel","Vitor","Pereira","Léo","Mateus","Gustavo"]
 @app.post("/telegram/webhook")
 async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]=Header(default=None)):
@@ -382,10 +387,31 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
     PLAYER_EDIT_STATE.pop(uid,None);send(chat,f"{name} foi retirado da equipe. O histórico de estatísticas foi preservado.",menu=True)
    else:send(chat,"Digite EXCLUIR para confirmar ou /cancelar.")
    return {"ok":True}
+ if str(chat) in COMPETITION_PICK_STATE and raw_text and not raw_text.startswith("/") and uid in ADMINS:
+  with SessionLocal() as s:
+   comp=s.query(Competition).filter(Competition.name.ilike(raw_text.strip())).first()
+   mid=COMPETITION_PICK_STATE[str(chat)]
+   m=s.get(Match,mid)
+   if comp and m and m.status=="Pendente":
+    m.competition_id=comp.id;log(s,"match.competition.assigned",f"#{mid}: {comp.name}");s.commit()
+    COMPETITION_PICK_STATE.pop(str(chat),None)
+    send(chat,f"Competição {comp.name} associada ao confronto #{mid}. Agora confira os jogadores e os placares antes de aprovar com /aprovar {mid}.",menu=True)
+   else:
+    send(chat,"Não encontrei essa competição cadastrada. Confira o nome ou use 🏅 Adicionar competição.",menu=True)
+  return {"ok":True}
  if uid in COMPETITION_ADD_STATE and raw_text and not raw_text.startswith("/"):
   with SessionLocal() as s:
    comp=Competition(name=raw_text.strip(),kind="Competição");s.add(comp);log(s,"competition.created.telegram",comp.name);s.commit();name=comp.name
-  COMPETITION_ADD_STATE.discard(uid);send(chat,f"Competição {name} cadastrada!",menu=True);return {"ok":True}
+  COMPETITION_ADD_STATE.discard(uid)
+  pending_id=COMPETITION_PICK_STATE.get(str(chat))
+  if pending_id:
+   with SessionLocal() as s:
+    m=s.get(Match,pending_id)
+    if m and m.status=="Pendente":m.competition_id=s.query(Competition).filter(Competition.name==name).first().id;s.commit()
+   COMPETITION_PICK_STATE.pop(str(chat),None)
+   send(chat,f"Competição {name} cadastrada e associada ao confronto #{pending_id}. Confira os dados e aprove com /aprovar {pending_id}.",menu=True)
+  else:send(chat,f"Competição {name} cadastrada!",menu=True)
+  return {"ok":True}
  if cmd=="/cancelar":
   PLAYER_ADD_STATE.pop(uid,None);PLAYER_EDIT_STATE.pop(uid,None);PLAYER_CARD_STATE.discard(uid);COMPETITION_ADD_STATE.discard(uid);send(chat,"Operação cancelada.",menu=True);return {"ok":True}
  if cmd=="/addplayer":
