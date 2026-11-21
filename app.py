@@ -13,8 +13,8 @@ import matplotlib.pyplot as plt
 import requests
 
 URL=os.getenv("DATABASE_URL","sqlite:///./arqueiros.db")
-if URL.startswith("postgres://"): URL=URL.replace("postgres://","postgresql+psycopg://",1)
-if URL.startswith("postgresql://"): URL=URL.replace("postgresql://","postgresql+psycopg://",1)
+if URL.startswith("postgres://"): URL=URL.replace("postgres://","postgresql+psycopg2://",1)
+if URL.startswith("postgresql://"): URL=URL.replace("postgresql://","postgresql+psycopg2://",1)
 engine=create_engine(URL,connect_args={"check_same_thread":False} if URL.startswith("sqlite") else {},pool_pre_ping=True)
 SessionLocal=sessionmaker(bind=engine,autoflush=False,expire_on_commit=False)
 class Base(DeclarativeBase): pass
