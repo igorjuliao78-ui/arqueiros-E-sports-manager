@@ -555,6 +555,19 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
  if uid not in ADMINS:
   send(chat,"Acesso restrito. Use /id e peça ao administrador para liberar seu usuário.")
   return {"ok":True}
+ # Intercepta MENU/CANCELAR antes de qualquer estado de cadastro ou edição.
+ if raw_text.strip().casefold() in {"🏹 menu","menu","/menu","⬅️ menu principal"}:
+  PLAYER_ADD_STATE.pop(uid,None);PLAYER_EDIT_STATE.pop(uid,None);PLAYER_CARD_STATE.discard(uid)
+  COMPETITION_ADD_STATE.discard(uid);COMPETITION_PICK_STATE.pop(str(chat),None)
+  PLAYER_DETAIL_STATE.pop(uid,None);COMPETITION_DETAIL_STATE.pop(uid,None)
+  COMPETITION_DELETE_STATE.pop(uid,None);PLAYER_BUTTONS.pop(uid,None);COMPETITION_BUTTONS.pop(uid,None);COMPETITION_DELETE_BUTTONS.pop(uid,None)
+  send(chat,"🏹 Menu principal. Cadastro ou operação anterior cancelada.",menu=True);return {"ok":True}
+ if raw_text.strip().casefold() in {"❌ cancelar","/cancelar"}:
+  PLAYER_ADD_STATE.pop(uid,None);PLAYER_EDIT_STATE.pop(uid,None);PLAYER_CARD_STATE.discard(uid)
+  COMPETITION_ADD_STATE.discard(uid);COMPETITION_PICK_STATE.pop(str(chat),None)
+  PLAYER_DETAIL_STATE.pop(uid,None);COMPETITION_DETAIL_STATE.pop(uid,None)
+  COMPETITION_DELETE_STATE.pop(uid,None);PLAYER_BUTTONS.pop(uid,None);COMPETITION_BUTTONS.pop(uid,None);COMPETITION_DELETE_BUTTONS.pop(uid,None)
+  send(chat,"Operação cancelada.",menu=True);return {"ok":True}
  if msg.get("photo"):
   if uid not in ADMINS:send(chat,"Acesso restrito.");return {"ok":True}
   state=PLAYER_ADD_STATE.get(uid) or PLAYER_EDIT_STATE.get(uid)
@@ -685,7 +698,7 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
    else:
     send(chat,"Não encontrei essa competição cadastrada. Confira o nome ou use 🏅 Adicionar competição.",menu=True)
   return {"ok":True}
- if uid in COMPETITION_ADD_STATE and raw_text and not raw_text.startswith("/"):
+ if uid in COMPETITION_ADD_STATE and raw_text and raw_text.strip().casefold() not in {"🏹 menu","menu","/menu","❌ cancelar","/cancelar"} and not raw_text.startswith("/"):
   with SessionLocal() as s:
    comp=Competition(name=raw_text.strip(),kind="Competição");s.add(comp);log(s,"competition.created.telegram",comp.name);s.commit();name=comp.name
   COMPETITION_ADD_STATE.discard(uid)
