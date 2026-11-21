@@ -30,6 +30,7 @@ class Player(Base):
  team:Mapped[str]=mapped_column(String(100),default="")
  photo_file_id:Mapped[Optional[str]]=mapped_column(String(255),nullable=True)
  active:Mapped[bool]=mapped_column(Boolean,default=True)
+ status:Mapped[str]=mapped_column(String(30),default="Ativo")
 class Notice(Base):
  __tablename__="notices"
  id:Mapped[int]=mapped_column(primary_key=True)
@@ -92,6 +93,7 @@ Base.metadata.create_all(engine)
 with engine.begin() as conn:
  columns={x["name"] for x in inspect(engine).get_columns("players")}
  if "photo_file_id" not in columns: conn.execute(sql_text("ALTER TABLE players ADD COLUMN photo_file_id VARCHAR(255)"))
+ if "status" not in columns: conn.execute(sql_text("ALTER TABLE players ADD COLUMN status VARCHAR(30) NOT NULL DEFAULT 'Ativo'"))
 with SessionLocal() as s:
  existing={p.name.casefold() for p in s.query(Player).all()}
  for player_name in ROSTER:
@@ -169,7 +171,14 @@ async def update_player(pid:int,request:Request,s:Session=Depends(get_db),_:bool
 def delete_player(pid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
  p=s.get(Player,pid)
  if not p:raise HTTPException(404,"Jogador não encontrado")
- p.active=False;log(s,"player.deactivated",p.name);s.commit();return {"ok":True}
+ p.active=False;p.status="Desligado";log(s,"player.deactivated",p.name);s.commit();return {"ok":True}
+@app.put("/api/players/{pid}/status")
+async def update_player_status(pid:int,request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ d=await request.json();status=str(d.get("status","")).strip()
+ if status not in ("Ativo","Reserva","Afastado","Desligado"):raise HTTPException(400,"Status inválido")
+ p=s.get(Player,pid)
+ if not p:raise HTTPException(404,"Jogador não encontrado")
+ p.status=status;p.active=status!="Desligado";log(s,"player.status.changed",f"{p.name}: {status}");s.commit();return {"ok":True,"status":status}
 @app.put("/api/competitions/{cid}")
 async def update_comp(cid:int,request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
  d=await request.json();c=s.get(Competition,cid)
@@ -315,7 +324,7 @@ def player_metrics(s,p):
  games=s.query(MatchPlayerStat).join(Match,Match.id==MatchPlayerStat.match_id).filter(MatchPlayerStat.player_name==p.name,Match.status=="Aprovado").all()
  played=[g for g in games if g.goals_for is not None and g.goals_against is not None]
  wins=sum(g.goals_for>g.goals_against for g in played);draws=sum(g.goals_for==g.goals_against for g in played);losses=len(played)-wins-draws
- return {"games":len(played),"wins":wins,"draws":draws,"losses":losses,"goals":sum(g.goals_for or 0 for g in played),"conceded":sum(g.goals_against or 0 for g in played)}
+ return {"games":len(played),"wins":wins,"draws":draws,"losses":losses,"goals":sum(g.goals_for or 0 for g in played),"conceded":sum(g.goals_against or 0 for g in played),"goal_difference":sum((g.goals_for or 0)-(g.goals_against or 0) for g in played),"win_rate":round(wins/len(played)*100,1) if played else 0}
 def weekly_player_image(p,metrics):
  fig=plt.figure(figsize=(8,5),facecolor=TEAM_DARK);ax=fig.add_axes([0,0,1,1]);ax.set_facecolor(TEAM_DARK);ax.axis("off")
  ax.add_patch(plt.Rectangle((0,.94),1,.06,color=TEAM_RED,transform=ax.transAxes))
