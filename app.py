@@ -171,8 +171,8 @@ def card(s:Session=Depends(get_db),_:bool=Depends(auth)):
 def card_image(title,lines):
  fig,ax=plt.subplots(figsize=(10,max(3,1+len(lines)*.42)));fig.patch.set_facecolor("#101827");ax.set_facecolor("#101827");ax.axis("off")
  ax.text(.05,.94,title,transform=ax.transAxes,color="#f2c66d",fontsize=19,fontweight="bold",va="top")
- y=.82
- for line in lines:ax.text(.06,y,str(line),transform=ax.transAxes,color="white",fontsize=12,va="top",wrap=True);y-=.075
+ y=.84;step=.78/max(len(lines),1)
+ for line in lines:ax.text(.06,y,str(line),transform=ax.transAxes,color="white",fontsize=11,va="top",wrap=True);y-=step
  fig.tight_layout(pad=1.5);buf=io.BytesIO();fig.savefig(buf,format="png",dpi=150,facecolor=fig.get_facecolor());plt.close(fig);buf.seek(0);return buf
 def send(chat,text,menu=False):
  if not BOT:return
