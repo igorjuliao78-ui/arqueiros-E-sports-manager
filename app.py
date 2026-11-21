@@ -1,4 +1,4 @@
-import os, io, json, secrets
+import os, io, json, secrets, re, unicodedata, difflib
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import FastAPI, Request, HTTPException, Header, Depends
@@ -11,6 +11,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import requests
+import pytesseract
+from PIL import Image
 
 URL=os.getenv("DATABASE_URL","sqlite:///./arqueiros.db")
 if URL.startswith("postgres://"): URL=URL.replace("postgres://","postgresql+psycopg2://",1)
@@ -43,6 +45,14 @@ class Match(Base):
  away_score:Mapped[Optional[int]]=mapped_column(Integer,nullable=True)
  status:Mapped[str]=mapped_column(String(30),default="Pendente")
  created_at:Mapped[datetime]=mapped_column(DateTime,default=datetime.utcnow)
+class MatchPlayerStat(Base):
+ __tablename__="match_player_stats"
+ id:Mapped[int]=mapped_column(primary_key=True)
+ match_id:Mapped[int]=mapped_column(ForeignKey("matches.id"))
+ player_name:Mapped[str]=mapped_column(String(100))
+ opponent_name:Mapped[str]=mapped_column(String(100),default="")
+ goals_for:Mapped[Optional[int]]=mapped_column(Integer,nullable=True)
+ goals_against:Mapped[Optional[int]]=mapped_column(Integer,nullable=True)
 class Discipline(Base):
  __tablename__="discipline"
  id:Mapped[int]=mapped_column(primary_key=True)
@@ -158,17 +168,73 @@ def card(s:Session=Depends(get_db),_:bool=Depends(auth)):
  ax.set_title("ARQUEIROS E-SPORTS | RANKING",color="white");ax.tick_params(colors="white");ax.set_xlabel("Pontos",color="white")
  for sp in ax.spines.values():sp.set_visible(False)
  fig.tight_layout();buf=io.BytesIO();fig.savefig(buf,format="png",dpi=150,facecolor=fig.get_facecolor());plt.close(fig);buf.seek(0);return StreamingResponse(buf,media_type="image/png")
+def card_image(title,lines):
+ fig,ax=plt.subplots(figsize=(10,max(3,1+len(lines)*.42)));fig.patch.set_facecolor("#101827");ax.set_facecolor("#101827");ax.axis("off")
+ ax.text(.05,.94,title,transform=ax.transAxes,color="#f2c66d",fontsize=19,fontweight="bold",va="top")
+ y=.82
+ for line in lines:ax.text(.06,y,str(line),transform=ax.transAxes,color="white",fontsize=12,va="top",wrap=True);y-=.075
+ fig.tight_layout(pad=1.5);buf=io.BytesIO();fig.savefig(buf,format="png",dpi=150,facecolor=fig.get_facecolor());plt.close(fig);buf.seek(0);return buf
 def send(chat,text,menu=False):
- payload={"chat_id":chat,"text":text}
+ if not BOT:return
+ buf=card_image("ARQUEIROS E-SPORTS",str(text).splitlines() or [" "])
+ requests.post("https://api.telegram.org/bot"+BOT+"/sendPhoto",data={"chat_id":chat,"caption":"🏹 "+str(text)[:900]},files={"photo":("arqueiros.png",buf.getvalue(),"image/png")},timeout=30).raise_for_status()
  if menu:
-  payload["reply_markup"]={"keyboard":[[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"➕ Adicionar jogador"},{"text":"📥 Cadastrar elenco"}],[{"text":"❔ Ajuda"},{"text":"🏹 Menu"}]],"resize_keyboard":True}
- if BOT:requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json=payload,timeout=15).raise_for_status()
+  payload={"chat_id":chat,"text":"🏹 Menu de opções","reply_markup":{"keyboard":[[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"➕ Adicionar jogador"},{"text":"📥 Cadastrar elenco"}],[{"text":"❔ Ajuda"},{"text":"🏹 Menu"}]],"resize_keyboard":True}}
+  requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json=payload,timeout=15).raise_for_status()
+def normalize_name(value):
+ value=unicodedata.normalize("NFKD",value).encode("ascii","ignore").decode().casefold()
+ return re.sub(r"[^a-z0-9]","",value)
+def parse_duel_ocr(text):
+ lines=[re.sub(r"\\s+"," ",x).strip() for x in text.splitlines() if x.strip()];scores=[];stats=[];team="Equipe adversária"
+ for line in lines:
+  m=re.search(r"CL[AÃ]O?\\s*:?\\s*(\\d+)",line,re.I)
+  if m:scores.append(int(m.group(1)))
+  t=re.search(r"ARQUEIROS\\s+E-SPORTS\\s*[x×]\\s*(.+)",line,re.I)
+  if t:team=t.group(1).strip()
+  m=re.match(r"^\\s*\\d+\\s*[➤>».-]?\\s*(.+?)\\s+(?:(\\d+)\\s*[x×]\\s*(\\d+)|[x×])\\s*(.*)$",line,re.I)
+  if m:
+   player=m.group(1).strip(" •➤».-")
+   if normalize_name(player) not in ("titulares","placar","cla","federacaomng"):
+    stats.append({"player":player,"gf":int(m.group(2)) if m.group(2) else None,"ga":int(m.group(3)) if m.group(3) else None,"opponent":(m.group(4) or "").strip()})
+ return {"team":team,"scores":scores,"stats":stats}
+def process_duel_photo(chat,file_id):
+ try:
+  meta=requests.get("https://api.telegram.org/bot"+BOT+"/getFile",params={"file_id":file_id},timeout=20).json()
+  if not meta.get("ok"):raise ValueError("Imagem não localizada")
+  path=meta["result"]["file_path"];raw=requests.get("https://api.telegram.org/file/bot"+BOT+"/"+path,timeout=30).content
+  text=pytesseract.image_to_string(Image.open(io.BytesIO(raw)).convert("RGB"),lang="por+eng",config="--psm 6")
+  parsed=parse_duel_ocr(text)
+  if not parsed["stats"]:send(chat,"Não consegui reconhecer os jogadores e placares. Envie uma imagem nítida mostrando toda a descrição.");return
+  with SessionLocal() as s:
+   m=Match(home="ARQUEIROS E-SPORTS",away=parsed["team"],home_score=parsed["scores"][0] if len(parsed["scores"])>0 else None,away_score=parsed["scores"][1] if len(parsed["scores"])>1 else None,status="Pendente");s.add(m);s.flush()
+   known={normalize_name(p.name):p.name for p in s.query(Player).filter(Player.active.is_(True)).all()};unmatched=[]
+   for row in parsed["stats"]:
+    best=difflib.get_close_matches(normalize_name(row["player"]),list(known),n=1,cutoff=.78)
+    if best:row["player"]=known[best[0]]
+    else:unmatched.append(row["player"])
+    s.add(MatchPlayerStat(match_id=m.id,player_name=row["player"],opponent_name=row["opponent"],goals_for=row["gf"],goals_against=row["ga"]))
+   log(s,"duel.ocr.pending",f"#{m.id}");s.commit();mid=m.id
+  lines=[f"CONFRONTO #{mid} — {parsed['team']}",f"Placar dos clãs: {parsed['scores'][0] if len(parsed['scores'])>0 else '?'} x {parsed['scores'][1] if len(parsed['scores'])>1 else '?'}","Jogadores:"]
+  for row in parsed["stats"]:lines.append(f"{row['player']} — "+(f"{row['gf']} x {row['ga']}" if row["gf"] is not None and row["ga"] is not None else "PENDENTE"))
+  if unmatched:lines.append("Conferir nomes: "+", ".join(unmatched))
+  lines.append(f"Para confirmar: /aprovar {mid} | descartar: /rejeitar {mid}");send(chat,"\\n".join(lines),menu=True)
+ except Exception as e:send(chat,"Falha na leitura da imagem. Tente novamente com mais nitidez. "+str(e)[:120])
 PLAYER_ADD_STATE=set()
 ROSTER=["Jesus「ΔΩŘ」","Carlos","CDS","SM7","Jackson","Rony","Julião","Wellinson","Guiih S.","Jefferson","Marinhoox","Diogo Lima","Miquéias","Eltom Pereira","Joab Junior","Ezequiel","Brunno Bass","Davi","Trinity","Adriel","Vitor","Pereira","Léo","Mateus","Gustavo"]
 @app.post("/telegram/webhook")
 async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]=Header(default=None)):
  if HOOK and not secrets.compare_digest(x_telegram_bot_api_secret_token or "",HOOK):raise HTTPException(403,"Webhook inválido")
- update=await request.json();msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));raw_text=msg.get("text","").strip();parts=raw_text.split()
+ update=await request.json()
+ if update.get("callback_query"):
+  cq=update["callback_query"];cqchat=cq.get("message",{}).get("chat",{}).get("id");cquid=str(cq.get("from",{}).get("id",""));data=cq.get("data","")
+  if cquid in ADMINS and data.startswith(("approve_duel:","reject_duel:")):
+   action,mid=data.split(":");mid=int(mid)
+   with SessionLocal() as s:
+    m=s.get(Match,mid)
+    if m and m.status=="Pendente":m.status="Aprovado" if action=="approve_duel" else "Rejeitado";log(s,"match."+m.status.lower(),mid);s.commit();send(cqchat,f"Confronto #{mid} {m.status.lower()}.",menu=True)
+  requests.post("https://api.telegram.org/bot"+BOT+"/answerCallbackQuery",json={"callback_query_id":cq["id"]},timeout=10)
+  return {"ok":True}
+ msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));raw_text=msg.get("text","").strip();parts=raw_text.split()
  if not chat:return {"ok":True}
  cmd=raw_text.split("@")[0].lower() if raw_text.startswith("/") else raw_text
  cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","📥 Cadastrar elenco":"/addroster","❔ Ajuda":"/help","🏹 Menu":"/menu"}.get(cmd,cmd)
@@ -185,6 +251,9 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
  if uid not in ADMINS:
   send(chat,"Acesso restrito. Use /id e peça ao administrador para liberar seu usuário.")
   return {"ok":True}
+ if msg.get("photo"):
+  if uid not in ADMINS:send(chat,"Acesso restrito.");return {"ok":True}
+  process_duel_photo(chat,msg["photo"][-1]["file_id"]);return {"ok":True}
  if uid in PLAYER_ADD_STATE and not cmd.startswith("/"):
   name=msg.get("text","").strip()
   if not name:
@@ -229,8 +298,12 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
    out="🏹 ARQUEIROS MANAGER\nUse os botões do menu ou os comandos:\n/stats - resumo geral\n/jogadores - lista de jogadores ativos\n/pendentes - resultados aguardando aprovação\n/aprovar ID - aprova resultado\n/rejeitar ID - rejeita resultado\n/ranking - classificação\n/menu - abrir botões"
   elif cmd=="/stats":out=f"Jogadores: {d['players']}\nCompetições: {d['competitions']}\nPartidas aprovadas: {d['approved']}\nPendentes: {d['pending']}"
   elif cmd=="/jogadores":
-   rows=s.query(Player).filter(Player.active.is_(True)).order_by(Player.name).all()
-   out="\n".join(f"• {p.name}"+(f" (@{p.nickname})" if p.nickname else "") for p in rows) or "Nenhum jogador cadastrado."
+   rows=s.query(Player).filter(Player.active.is_(True)).order_by(Player.name).all();lines=[]
+   for p in rows:
+    games=s.query(MatchPlayerStat).join(Match,Match.id==MatchPlayerStat.match_id).filter(MatchPlayerStat.player_name==p.name,Match.status=="Aprovado").all()
+    played=[x for x in games if x.goals_for is not None and x.goals_against is not None]
+    lines.append(f"• {p.name} — {len(played)} jogos | {sum(x.goals_for or 0 for x in played)} gols | {sum(x.goals_against or 0 for x in played)} sofridos")
+   out="\\n".join(lines) or "Nenhum jogador cadastrado."
   elif cmd=="/pendentes":
    rows=s.query(Match).filter(Match.status=="Pendente").order_by(Match.id).all()
    out="\n".join(f"#{m.id} {m.home} {m.home_score} x {m.away_score} {m.away}" for m in rows) or "Nenhum resultado pendente."
