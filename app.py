@@ -312,7 +312,9 @@ def build_full_report(s):
  styles.add(ParagraphStyle(name="SmallCell",parent=styles["BodyText"],fontSize=7.5,leading=9))
  story=[]
  def para(value,style="SmallCell"):
-  return Paragraph(xml_escape(str(value if value is not None else "-")).replace("\\n","<br/>"),styles[style])
+  raw=str(value if value is not None else "-")
+  raw="".join(ch if ord(ch)<=255 else unicodedata.normalize("NFKD",ch).encode("ascii","ignore").decode() for ch in raw)
+  return Paragraph(xml_escape(raw).replace("\\n","<br/>"),styles[style])
  def add_table(headers,rows,widths=None):
   data=[[para(x) for x in headers]]+[[para(x) for x in row] for row in rows]
   t=Table(data,colWidths=widths,repeatRows=1,hAlign="LEFT")
