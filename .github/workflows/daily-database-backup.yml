@@ -13,18 +13,21 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
-      - name: Create encrypted-by-transport database dump
+      - name: Create and encrypt PostgreSQL dump
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
         run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "Missing GitHub Actions secret DATABASE_URL (Render External Database URL)."
+          if [ -z "$DATABASE_URL" ] || [ -z "$BACKUP_ENCRYPTION_PASSPHRASE" ]; then
+            echo "Missing DATABASE_URL or BACKUP_ENCRYPTION_PASSPHRASE repository secret."
             exit 1
           fi
           pg_dump "$DATABASE_URL" --no-owner --no-acl --format=custom --file=arqueiros-backup.dump
-      - name: Store backup artifact
+          gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" --output arqueiros-backup.dump.gpg arqueiros-backup.dump
+          shred -u arqueiros-backup.dump
+      - name: Store encrypted backup artifact
         uses: actions/upload-artifact@v4
         with:
           name: arqueiros-postgresql-backup-${{ github.run_id }}
-          path: arqueiros-backup.dump
+          path: arqueiros-backup.dump.gpg
           retention-days: 30
