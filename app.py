@@ -1,5 +1,5 @@
 import os, io, json, secrets, re, unicodedata, difflib
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from fastapi import FastAPI, Request, HTTPException, Header, Depends
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -30,6 +30,12 @@ class Player(Base):
  team:Mapped[str]=mapped_column(String(100),default="")
  photo_file_id:Mapped[Optional[str]]=mapped_column(String(255),nullable=True)
  active:Mapped[bool]=mapped_column(Boolean,default=True)
+class Notice(Base):
+ __tablename__="notices"
+ id:Mapped[int]=mapped_column(primary_key=True)
+ title:Mapped[str]=mapped_column(String(160))
+ body:Mapped[str]=mapped_column(Text)
+ created_at:Mapped[datetime]=mapped_column(DateTime,default=datetime.utcnow)
 class Competition(Base):
  __tablename__="competitions"
  id:Mapped[int]=mapped_column(primary_key=True)
@@ -211,7 +217,11 @@ async def update_match_stat(sid:int,request:Request,s:Session=Depends(get_db),_:
 async def add_match(request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
  d=await request.json()
  if not d.get("home") or not d.get("away") or d["home"]==d["away"]:raise HTTPException(400,"Informe equipes diferentes")
- m=Match(home=d["home"],away=d["away"],home_score=int(d["home_score"]),away_score=int(d["away_score"]),competition_id=d.get("competition_id") or None)
+ hs=int(d["home_score"]); aw=int(d["away_score"]); cid=d.get("competition_id") or None
+ since=datetime.utcnow()-timedelta(hours=24)
+ duplicate=s.query(Match).filter(Match.home==d["home"],Match.away==d["away"],Match.home_score==hs,Match.away_score==aw,Match.competition_id==cid,Match.created_at>=since,Match.status.in_(["Pendente","Aprovado"])).first()
+ if duplicate:raise HTTPException(409,f"Possível confronto duplicado: registro #{duplicate.id} ({duplicate.status}). Confira antes de cadastrar novamente.")
+ m=Match(home=d["home"],away=d["away"],home_score=hs,away_score=aw,competition_id=cid)
  s.add(m);log(s,"match.submitted",m.home+" x "+m.away);s.commit();return {"ok":True,"id":m.id}
 @app.post("/api/matches/{mid}/{action}")
 def match_action(mid:int,action:str,s:Session=Depends(get_db),_:bool=Depends(auth)):
@@ -237,6 +247,48 @@ async def add_recruit(request:Request,s:Session=Depends(get_db),_:bool=Depends(a
  d=await request.json()
  if not d.get("nickname"):raise HTTPException(400,"Nick obrigatório")
  s.add(Recruit(nickname=d["nickname"],position=d.get("position",""),contact=d.get("contact","")));log(s,"recruit.created",d["nickname"]);s.commit();return {"ok":True}
+@app.get("/api/competitions/{cid}/ranking")
+def competition_ranking(cid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ c=s.get(Competition,cid)
+ if not c:raise HTTPException(404,"Competição não encontrada")
+ table={}
+ for m in s.query(Match).filter(Match.competition_id==cid,Match.status=="Aprovado").all():
+  for team,gf,ga in [(m.home,m.home_score,m.away_score),(m.away,m.away_score,m.home_score)]:
+   x=table.setdefault(team,{"team":team,"J":0,"V":0,"E":0,"D":0,"GP":0,"GC":0,"SG":0,"PTS":0})
+   x["J"]+=1;x["GP"]+=gf or 0;x["GC"]+=ga or 0
+   if gf>ga:x["V"]+=1;x["PTS"]+=3
+   elif gf==ga:x["E"]+=1;x["PTS"]+=1
+   else:x["D"]+=1
+   x["SG"]=x["GP"]-x["GC"]
+ return {"competition":c.name,"ranking":sorted(table.values(),key=lambda x:(-x["PTS"],-x["SG"],-x["GP"],x["team"]))}
+@app.get("/api/reports/monthly")
+def monthly_report(month:str="",s:Session=Depends(get_db),_:bool=Depends(auth)):
+ try: start=datetime.strptime(month or datetime.utcnow().strftime("%Y-%m"),"%Y-%m")
+ except ValueError:raise HTTPException(400,"Use mês no formato AAAA-MM")
+ end=(start.replace(day=28)+timedelta(days=4)).replace(day=1)
+ matches=s.query(Match).filter(Match.status=="Aprovado",Match.created_at>=start,Match.created_at<end).all()
+ wins=sum(1 for m in matches if m.home=="ARQUEIROS E-SPORTS" and (m.home_score or 0)>(m.away_score or 0))
+ draws=sum(1 for m in matches if m.home=="ARQUEIROS E-SPORTS" and m.home_score==m.away_score)
+ losses=sum(1 for m in matches if m.home=="ARQUEIROS E-SPORTS" and (m.home_score or 0)<(m.away_score or 0))
+ return {"month":start.strftime("%Y-%m"),"matches":len(matches),"wins":wins,"draws":draws,"losses":losses,"goals_for":sum(m.home_score or 0 for m in matches if m.home=="ARQUEIROS E-SPORTS"),"goals_against":sum(m.away_score or 0 for m in matches if m.home=="ARQUEIROS E-SPORTS")}
+@app.get("/api/notices")
+def list_notices(s:Session=Depends(get_db),_:bool=Depends(auth)):
+ return [{"id":n.id,"title":n.title,"body":n.body,"created_at":n.created_at.isoformat()} for n in s.query(Notice).order_by(Notice.id.desc()).limit(30).all()]
+@app.post("/api/notices")
+async def create_notice(request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ d=await request.json();title=str(d.get("title","")).strip();body=str(d.get("body","")).strip()
+ if not title or not body:raise HTTPException(400,"Informe título e comunicado")
+ n=Notice(title=title,body=body);s.add(n);log(s,"notice.created",title);s.commit()
+ group=os.getenv("TEAM_CHAT_ID","").strip();sent=False
+ if group and BOT:
+  try:requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json={"chat_id":group,"text":"📢 "+title+"\\n\\n"+body},timeout=15).raise_for_status();sent=True
+  except Exception:sent=False
+ return {"ok":True,"id":n.id,"telegram_sent":sent,"message":"Comunicado salvo"+(" e enviado ao grupo." if sent else ". Configure TEAM_CHAT_ID para enviar ao grupo do Telegram.")}
+@app.delete("/api/notices/{nid}")
+def delete_notice(nid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ n=s.get(Notice,nid)
+ if not n:raise HTTPException(404,"Comunicado não encontrado")
+ log(s,"notice.deleted",n.title);s.delete(n);s.commit();return {"ok":True}
 @app.get("/api/export")
 def export(s:Session=Depends(get_db),_:bool=Depends(auth)):
  return {"players":[{"name":p.name,"nickname":p.nickname,"position":p.position,"team":p.team,"active":p.active} for p in s.query(Player).all()],"competitions":[{"name":c.name,"kind":c.kind,"season":c.season} for c in s.query(Competition).all()],"matches":[{"home":m.home,"away":m.away,"home_score":m.home_score,"away_score":m.away_score,"status":m.status} for m in s.query(Match).all()],"titles":[{"name":t.name,"season":t.season,"notes":t.notes} for t in s.query(Title).all()],"exported_at":datetime.now(timezone.utc).isoformat()}
