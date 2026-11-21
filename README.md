@@ -6,6 +6,8 @@ Sistema de gestão da Arqueiros E-Sports com painel administrativo e bot do Tele
 - Painel administrativo protegido por token.
 - Painel administrativo com indicadores, elenco, competições, confrontos, títulos e auditoria.
 - Cadastro, edição e retirada de jogadores, preservando histórico.
+- Status do elenco: ativo, reserva, afastado e desligado, com filtro de busca.
+- Indicadores de aproveitamento, saldo de gols e estatísticas individuais por competição.
 - Cadastro, edição e exclusão de competições.
 - Registro e histórico de títulos conquistados.
 - Revisão manual dos jogadores e placares reconhecidos por OCR antes da aprovação.
@@ -16,6 +18,7 @@ Sistema de gestão da Arqueiros E-Sports com painel administrativo e bot do Tele
 - Exportação JSON, histórico de auditoria e card PNG do ranking.
 - Proteção contra possíveis confrontos duplicados (janela de 24 horas).
 - Ranking e relatórios por competição.
+- Relatório mensal de resultados e mural de comunicados.
 - Relatório mensal de resultados.
 - Mural de comunicados administrativos, com envio opcional ao grupo Telegram.
 
