@@ -261,7 +261,8 @@ def process_duel_photo(chat,file_id):
   parsed=parse_duel_ocr(text)
   if not parsed["stats"]:send(chat,"Não consegui reconhecer os jogadores e placares. Envie uma imagem nítida mostrando toda a descrição.");return
   with SessionLocal() as s:
-   m=Match(home="ARQUEIROS E-SPORTS",away=parsed["team"],home_score=parsed["scores"][0] if len(parsed["scores"])>0 else None,away_score=parsed["scores"][1] if len(parsed["scores"])>1 else None,status="Pendente");s.add(m);s.flush()
+   active_comp=s.query(Competition).order_by(Competition.id.desc()).first()
+   m=Match(competition_id=active_comp.id if active_comp else None,home="ARQUEIROS E-SPORTS",away=parsed["team"],home_score=parsed["scores"][0] if len(parsed["scores"])>0 else None,away_score=parsed["scores"][1] if len(parsed["scores"])>1 else None,status="Pendente");s.add(m);s.flush()
    known={normalize_name(p.name):p.name for p in s.query(Player).filter(Player.active.is_(True)).all()};unmatched=[]
    for row in parsed["stats"]:
     best=difflib.get_close_matches(normalize_name(row["player"]),list(known),n=1,cutoff=.78)
