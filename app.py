@@ -185,13 +185,13 @@ def normalize_name(value):
  value=unicodedata.normalize("NFKD",value).encode("ascii","ignore").decode().casefold()
  return re.sub(r"[^a-z0-9]","",value)
 def parse_duel_ocr(text):
- lines=[re.sub(r"\\s+"," ",x).strip() for x in text.splitlines() if x.strip()];scores=[];stats=[];team="Equipe adversária"
+ lines=[re.sub(r"\s+"," ",x).strip() for x in text.splitlines() if x.strip()];scores=[];stats=[];team="Equipe adversária"
  for line in lines:
-  m=re.search(r"CL[AÃ]O?\\s*:?\\s*(\\d+)",line,re.I)
+  m=re.search(r"CL[AÃ]O?\s*:?\s*(\d+)",line,re.I)
   if m:scores.append(int(m.group(1)))
-  t=re.search(r"ARQUEIROS\\s+E-SPORTS\\s*[x×]\\s*(.+)",line,re.I)
+  t=re.search(r"ARQUEIROS\s+E-SPORTS\s*[x×]\s*(.+)",line,re.I)
   if t:team=t.group(1).strip()
-  m=re.match(r"^\\s*\\d+\\s*[➤>».-]?\\s*(.+?)\\s+(?:(\\d+)\\s*[x×]\\s*(\\d+)|[x×])\\s*(.*)$",line,re.I)
+  m=re.match(r"^\s*\d+\s*[➤>».-]?\s*(.+?)\s+(?:(\d+)\s*[x×]\s*(\d+)|[x×])\s*(.*)$",line,re.I)
   if m:
    player=m.group(1).strip(" •➤».-")
    if normalize_name(player) not in ("titulares","placar","cla","federacaomng"):
@@ -217,7 +217,7 @@ def process_duel_photo(chat,file_id):
   lines=[f"CONFRONTO #{mid} — {parsed['team']}",f"Placar dos clãs: {parsed['scores'][0] if len(parsed['scores'])>0 else '?'} x {parsed['scores'][1] if len(parsed['scores'])>1 else '?'}","Jogadores:"]
   for row in parsed["stats"]:lines.append(f"{row['player']} — "+(f"{row['gf']} x {row['ga']}" if row["gf"] is not None and row["ga"] is not None else "PENDENTE"))
   if unmatched:lines.append("Conferir nomes: "+", ".join(unmatched))
-  lines.append(f"Para confirmar: /aprovar {mid} | descartar: /rejeitar {mid}");send(chat,"\\n".join(lines),menu=True)
+  lines.append(f"Para confirmar: /aprovar {mid} | descartar: /rejeitar {mid}");send(chat,"\n".join(lines),menu=True)
  except Exception as e:send(chat,"Falha na leitura da imagem. Tente novamente com mais nitidez. "+str(e)[:120])
 PLAYER_ADD_STATE=set()
 ROSTER=["Jesus「ΔΩŘ」","Carlos","CDS","SM7","Jackson","Rony","Julião","Wellinson","Guiih S.","Jefferson","Marinhoox","Diogo Lima","Miquéias","Eltom Pereira","Joab Junior","Ezequiel","Brunno Bass","Davi","Trinity","Adriel","Vitor","Pereira","Léo","Mateus","Gustavo"]
@@ -303,7 +303,7 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
     games=s.query(MatchPlayerStat).join(Match,Match.id==MatchPlayerStat.match_id).filter(MatchPlayerStat.player_name==p.name,Match.status=="Aprovado").all()
     played=[x for x in games if x.goals_for is not None and x.goals_against is not None]
     lines.append(f"• {p.name} — {len(played)} jogos | {sum(x.goals_for or 0 for x in played)} gols | {sum(x.goals_against or 0 for x in played)} sofridos")
-   out="\\n".join(lines) or "Nenhum jogador cadastrado."
+   out="\n".join(lines) or "Nenhum jogador cadastrado."
   elif cmd=="/pendentes":
    rows=s.query(Match).filter(Match.status=="Pendente").order_by(Match.id).all()
    out="\n".join(f"#{m.id} {m.home} {m.home_score} x {m.away_score} {m.away}" for m in rows) or "Nenhum resultado pendente."
