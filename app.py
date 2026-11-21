@@ -203,6 +203,14 @@ def match_action(mid:int,action:str,s:Session=Depends(get_db),_:bool=Depends(aut
  if action not in ("approve","reject"):raise HTTPException(400,"Ação inválida")
  m=s.get(Match,mid)
  if not m:raise HTTPException(404,"Partida não encontrada")
+ if action=="approve" and m.home=="ARQUEIROS E-SPORTS":
+  if not m.competition_id:raise HTTPException(400,"Associe uma competição antes de aprovar.")
+  stats=s.query(MatchPlayerStat).filter(MatchPlayerStat.match_id==m.id).all()
+  if not stats:raise HTTPException(400,"Nenhum placar individual reconhecido; envie novamente o print.")
+  for st in stats:
+   if st.goals_for is None or st.goals_against is None:raise HTTPException(400,"Há placar individual incompleto.")
+   if not s.query(Player).filter(Player.active.is_(True),Player.name==st.player_name).first():raise HTTPException(400,"Jogador não reconhecido: "+st.player_name)
+ if action=="approve" and (m.home_score is None or m.away_score is None):raise HTTPException(400,"Placar geral incompleto.")
  m.status="Aprovado" if action=="approve" else "Rejeitado";log(s,"match."+m.status.lower(),mid);s.commit();return {"ok":True}
 @app.post("/api/discipline")
 async def add_discipline(request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
@@ -339,6 +347,9 @@ def process_duel_photo(chat,file_id):
   elif len(comps)>1:
    COMPETITION_PICK_STATE[str(chat)]=mid
    lines.append("Qual competição corresponde a este confronto? Responda com o nome exatamente como aparece no cadastro.")
+  elif len(comps)==1:
+   COMPETITION_PICK_STATE[str(chat)]=mid
+   lines.append("Confirme a competição deste confronto respondendo exatamente: "+comps[0].name)
   else:
    COMPETITION_PICK_STATE[str(chat)]=mid
    lines.append("Ainda não há competição cadastrada. Use 🏅 Adicionar competição; depois informe o nome dela para associar este confronto.")
