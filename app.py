@@ -17,6 +17,7 @@ if URL.startswith("postgres://"): URL=URL.replace("postgres://","postgresql+psyc
 if URL.startswith("postgresql://"): URL=URL.replace("postgresql://","postgresql+psycopg2://",1)
 engine=create_engine(URL,connect_args={"check_same_thread":False} if URL.startswith("sqlite") else {},pool_pre_ping=True)
 SessionLocal=sessionmaker(bind=engine,autoflush=False,expire_on_commit=False)
+ROSTER=["Jesus「ΔΩŘ」","Carlos","CDS","SM7","Jackson","Rony","Julião","Wellinson","Guiih S.","Jefferson","Marinhoox","Diogo Lima","Miquéias","Eltom Pereira","Joab Junior","Ezequiel","Brunno Bass","Davi","Trinity","Adriel","Vitor","Pereira","Léo","Mateus","Gustavo"]
 class Base(DeclarativeBase): pass
 class Player(Base):
  __tablename__="players"
@@ -63,6 +64,12 @@ class Audit(Base):
  detail:Mapped[str]=mapped_column(Text,default="")
  created_at:Mapped[datetime]=mapped_column(DateTime,default=datetime.utcnow)
 Base.metadata.create_all(engine)
+with SessionLocal() as s:
+ existing={p.name.casefold() for p in s.query(Player).all()}
+ for player_name in ROSTER:
+  if player_name.casefold() not in existing:
+   s.add(Player(name=player_name))
+ s.commit()
 app=FastAPI(title="Arqueiros Manager",version="1.0.0")
 os.makedirs("static",exist_ok=True)
 app.mount("/static",StaticFiles(directory="static"),name="static")
