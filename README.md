@@ -4,7 +4,11 @@ Sistema de gestão da Arqueiros E-Sports com painel administrativo e bot do Tele
 
 ## Recursos
 - Painel administrativo protegido por token.
-- Cadastro de jogadores e competições.
+- Painel administrativo com indicadores, elenco, competições, confrontos, títulos e auditoria.
+- Cadastro, edição e retirada de jogadores, preservando histórico.
+- Cadastro, edição e exclusão de competições.
+- Registro e histórico de títulos conquistados.
+- Revisão manual dos jogadores e placares reconhecidos por OCR antes da aprovação.
 - Registro, aprovação e rejeição de resultados.
 - Ranking automático por pontos, saldo e gols.
 - Registro disciplinar e recrutamento.
@@ -87,7 +91,7 @@ No Telegram, abra o bot e teste:
 Os comandos administrativos só funcionam para IDs cadastrados em `TELEGRAM_ADMIN_IDS`. `/start` e `/id` ficam disponíveis para facilitar a configuração inicial.
 
 ## Painel administrativo
-Acesse `https://SUA_URL.onrender.com/?token=SEU_ADMIN_PANEL_TOKEN`.
+Acesse `https://SUA_URL.onrender.com/?token=SEU_ADMIN_PANEL_TOKEN`. O painel permite cadastrar/editar/retirar jogadores, gerenciar competições, registrar títulos, revisar confrontos e conferir estatísticas individuais. A foto do jogador pode ser enviada pelo fluxo de edição no Telegram.
 
 Guarde o token do painel em local seguro. Não envie a URL completa com o token em grupos ou conversas públicas.
 
