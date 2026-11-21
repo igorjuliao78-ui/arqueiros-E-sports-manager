@@ -36,6 +36,14 @@ class Competition(Base):
  name:Mapped[str]=mapped_column(String(120))
  kind:Mapped[str]=mapped_column(String(40),default="Liga")
  season:Mapped[str]=mapped_column(String(40),default="")
+class Title(Base):
+ __tablename__="titles"
+ id:Mapped[int]=mapped_column(primary_key=True)
+ name:Mapped[str]=mapped_column(String(120))
+ competition_id:Mapped[Optional[int]]=mapped_column(ForeignKey("competitions.id"),nullable=True)
+ season:Mapped[str]=mapped_column(String(40),default="")
+ won_at:Mapped[datetime]=mapped_column(DateTime,default=datetime.utcnow)
+ notes:Mapped[str]=mapped_column(Text,default="")
 class Match(Base):
  __tablename__="matches"
  id:Mapped[int]=mapped_column(primary_key=True)
@@ -116,7 +124,7 @@ def ranking(s):
    t["SG"]=t["GP"]-t["GC"]
  return sorted(table.values(),key=lambda x:(-x["PTS"],-x["SG"],-x["GP"],x["team"]))
 def dashboard(s):
- return {"players":s.query(Player).filter(Player.active.is_(True)).count(),"competitions":s.query(Competition).count(),"approved":s.query(Match).filter(Match.status=="Aprovado").count(),"pending":s.query(Match).filter(Match.status=="Pendente").count(),"ranking":ranking(s)}
+ return {"players":s.query(Player).filter(Player.active.is_(True)).count(),"competitions":s.query(Competition).count(),"approved":s.query(Match).filter(Match.status=="Aprovado").count(),"pending":s.query(Match).filter(Match.status=="Pendente").count(),"titles":s.query(Title).count(),"ranking":ranking(s)}
 @app.get("/health")
 def health(): return {"status":"ok","service":"Arqueiros Manager"}
 @app.get("/",response_class=HTMLResponse)
@@ -139,6 +147,49 @@ async def add_comp(request:Request,s:Session=Depends(get_db),_:bool=Depends(auth
  if not d.get("name","").strip():raise HTTPException(400,"Nome obrigatório")
  c=Competition(name=d["name"],kind=d.get("kind","Liga"),season=d.get("season",""))
  s.add(c);log(s,"competition.created",c.name);s.commit();return {"ok":True,"id":c.id}
+@app.put("/api/players/{pid}")
+async def update_player(pid:int,request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ d=await request.json();p=s.get(Player,pid)
+ if not p:raise HTTPException(404,"Jogador não encontrado")
+ old=p.name
+ for key in ("name","nickname","position","team"):
+  if key in d:setattr(p,key,str(d[key]).strip())
+ if not p.name:raise HTTPException(400,"Nome obrigatório")
+ if old!=p.name:s.query(MatchPlayerStat).filter(MatchPlayerStat.player_name==old).update({MatchPlayerStat.player_name:p.name})
+ log(s,"player.updated",f"{old} -> {p.name}");s.commit();return {"ok":True}
+@app.delete("/api/players/{pid}")
+def delete_player(pid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ p=s.get(Player,pid)
+ if not p:raise HTTPException(404,"Jogador não encontrado")
+ p.active=False;log(s,"player.deactivated",p.name);s.commit();return {"ok":True}
+@app.put("/api/competitions/{cid}")
+async def update_comp(cid:int,request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ d=await request.json();c=s.get(Competition,cid)
+ if not c:raise HTTPException(404,"Competição não encontrada")
+ c.name=d.get("name",c.name).strip();c.kind=d.get("kind",c.kind);c.season=d.get("season",c.season);log(s,"competition.updated",c.name);s.commit();return {"ok":True}
+@app.delete("/api/competitions/{cid}")
+def delete_comp(cid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ c=s.get(Competition,cid)
+ if not c:raise HTTPException(404,"Competição não encontrada")
+ s.query(Match).filter(Match.competition_id==cid).update({Match.competition_id:None})
+ s.query(Title).filter(Title.competition_id==cid).update({Title.competition_id:None})
+ log(s,"competition.deleted",c.name);s.delete(c);s.commit();return {"ok":True}
+@app.post("/api/titles")
+async def add_title(request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ d=await request.json()
+ if not d.get("name","").strip():raise HTTPException(400,"Nome do título obrigatório")
+ t=Title(name=d["name"].strip(),competition_id=d.get("competition_id") or None,season=d.get("season",""),notes=d.get("notes",""))
+ s.add(t);log(s,"title.won",t.name);s.commit();return {"ok":True,"id":t.id}
+@app.delete("/api/titles/{tid}")
+def delete_title(tid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ t=s.get(Title,tid)
+ if not t:raise HTTPException(404,"Título não encontrado")
+ log(s,"title.deleted",t.name);s.delete(t);s.commit();return {"ok":True}
+@app.get("/api/players/{pid}/stats")
+def player_stats(pid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ p=s.get(Player,pid)
+ if not p:raise HTTPException(404,"Jogador não encontrado")
+ return {"player":p.name,"stats":player_metrics(s,p)}
 @app.post("/api/matches")
 async def add_match(request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
  d=await request.json()
@@ -163,7 +214,7 @@ async def add_recruit(request:Request,s:Session=Depends(get_db),_:bool=Depends(a
  s.add(Recruit(nickname=d["nickname"],position=d.get("position",""),contact=d.get("contact","")));log(s,"recruit.created",d["nickname"]);s.commit();return {"ok":True}
 @app.get("/api/export")
 def export(s:Session=Depends(get_db),_:bool=Depends(auth)):
- return {"players":[{"name":p.name,"nickname":p.nickname,"position":p.position,"team":p.team,"active":p.active} for p in s.query(Player).all()],"competitions":[{"name":c.name,"kind":c.kind,"season":c.season} for c in s.query(Competition).all()],"matches":[{"home":m.home,"away":m.away,"home_score":m.home_score,"away_score":m.away_score,"status":m.status} for m in s.query(Match).all()],"exported_at":datetime.now(timezone.utc).isoformat()}
+ return {"players":[{"name":p.name,"nickname":p.nickname,"position":p.position,"team":p.team,"active":p.active} for p in s.query(Player).all()],"competitions":[{"name":c.name,"kind":c.kind,"season":c.season} for c in s.query(Competition).all()],"matches":[{"home":m.home,"away":m.away,"home_score":m.home_score,"away_score":m.away_score,"status":m.status} for m in s.query(Match).all()],"titles":[{"name":t.name,"season":t.season,"notes":t.notes} for t in s.query(Title).all()],"exported_at":datetime.now(timezone.utc).isoformat()}
 @app.get("/api/cards/ranking.png")
 def card(s:Session=Depends(get_db),_:bool=Depends(auth)):
  rows=ranking(s)[:10];fig,ax=plt.subplots(figsize=(9,max(3,1+len(rows)*.5)));fig.patch.set_facecolor("#111827");ax.set_facecolor("#111827")
