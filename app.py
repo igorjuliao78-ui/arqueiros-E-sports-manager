@@ -752,14 +752,15 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
  if cmd=="/competitions":
   with SessionLocal() as s: rows=s.query(Competition).order_by(Competition.name).all()
   if not rows:send(chat,"Nenhuma competição cadastrada.",menu=True);return {"ok":True}
-  COMPETITION_BUTTONS[uid]={x.name:x.id for x in rows}
-  keyboard=[[{"text":x.name}] for x in rows]+[[{"text":"🏹 MENU"}]]
+  COMPETITION_BUTTONS[uid]={f"🏆 {x.name}":x.id for x in rows}
+  keyboard=[[{"text":f"🏆 {x.name}"}] for x in rows]+[[{"text":"🏹 MENU"}]]
   send(chat,"📋 Escolha uma competição para ver seus dados:",menu=True,keyboard=keyboard);return {"ok":True}
  if cmd=="/deletecompetition":
   with SessionLocal() as s: rows=s.query(Competition).order_by(Competition.name).all()
   if not rows:send(chat,"Não há competições cadastradas para excluir.",menu=True);return {"ok":True}
-  COMPETITION_DELETE_BUTTONS[uid]={x.name:x.id for x in rows}
-  keyboard=[[{"text":x.name}] for x in rows]+[[{"text":"❌ Cancelar"},{"text":"🏹 MENU"}]]
+  # Prefixo visual evita conflito quando o nome cadastrado é "Menu".
+  COMPETITION_DELETE_BUTTONS[uid]={f"🗑️ {x.name}":x.id for x in rows}
+  keyboard=[[{"text":f"🗑️ {x.name}"}] for x in rows]+[[{"text":"❌ Cancelar"},{"text":"🏹 MENU"}]]
   send(chat,"🗑️ Selecione a competição que deseja excluir:",menu=True,keyboard=keyboard);return {"ok":True}
  if cmd=="/jogadores":
   with SessionLocal() as s: rows=s.query(Player).filter(Player.active.is_(True)).order_by(Player.name).all()
