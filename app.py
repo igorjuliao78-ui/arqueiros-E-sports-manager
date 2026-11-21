@@ -302,7 +302,8 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
    for p in rows:
     games=s.query(MatchPlayerStat).join(Match,Match.id==MatchPlayerStat.match_id).filter(MatchPlayerStat.player_name==p.name,Match.status=="Aprovado").all()
     played=[x for x in games if x.goals_for is not None and x.goals_against is not None]
-    lines.append(f"• {p.name} — {len(played)} jogos | {sum(x.goals_for or 0 for x in played)} gols | {sum(x.goals_against or 0 for x in played)} sofridos")
+    wins=sum(1 for x in played if x.goals_for>x.goals_against);draws=sum(1 for x in played if x.goals_for==x.goals_against);losses=len(played)-wins-draws
+    lines.append(f"• {p.name} — {len(played)} jogos | {wins}V {draws}E {losses}D | {sum(x.goals_for or 0 for x in played)} gols | {sum(x.goals_against or 0 for x in played)} sofridos")
    out="\n".join(lines) or "Nenhum jogador cadastrado."
   elif cmd=="/pendentes":
    rows=s.query(Match).filter(Match.status=="Pendente").order_by(Match.id).all()
@@ -313,6 +314,7 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
     m=s.get(Match,int(parts[1]))
     if not m:out="Resultado não encontrado."
     elif m.status!="Pendente":out=f"Esse resultado já está: {m.status}."
+    elif cmd=="/aprovar" and (m.home_score is None or m.away_score is None):out="Não é possível aprovar: o placar geral dos dois clãs precisa estar preenchido na descrição."
     else:
      m.status="Aprovado" if cmd=="/aprovar" else "Rejeitado"
      log(s,"match."+m.status.lower(),m.id);s.commit()
