@@ -280,7 +280,12 @@ def monthly_report(month:str="",s:Session=Depends(get_db),_:bool=Depends(auth)):
  wins=sum(1 for m in matches if m.home=="ARQUEIROS E-SPORTS" and (m.home_score or 0)>(m.away_score or 0))
  draws=sum(1 for m in matches if m.home=="ARQUEIROS E-SPORTS" and m.home_score==m.away_score)
  losses=sum(1 for m in matches if m.home=="ARQUEIROS E-SPORTS" and (m.home_score or 0)<(m.away_score or 0))
- return {"month":start.strftime("%Y-%m"),"matches":len(matches),"wins":wins,"draws":draws,"losses":losses,"goals_for":sum(m.home_score or 0 for m in matches if m.home=="ARQUEIROS E-SPORTS"),"goals_against":sum(m.away_score or 0 for m in matches if m.home=="ARQUEIROS E-SPORTS")}
+ match_ids=[m.id for m in matches]
+ goal_totals={}
+ if match_ids:
+  for st in s.query(MatchPlayerStat).filter(MatchPlayerStat.match_id.in_(match_ids)).all():goal_totals[st.player_name]=goal_totals.get(st.player_name,0)+(st.goals_for or 0)
+ top_player=max(goal_totals.items(),key=lambda x:x[1]) if goal_totals else (None,0)
+ return {"month":start.strftime("%Y-%m"),"matches":len(matches),"wins":wins,"draws":draws,"losses":losses,"goals_for":sum(m.home_score or 0 for m in matches if m.home=="ARQUEIROS E-SPORTS"),"goals_against":sum(m.away_score or 0 for m in matches if m.home=="ARQUEIROS E-SPORTS"),"top_player":top_player[0],"top_player_goals":top_player[1]}
 @app.get("/api/notices")
 def list_notices(s:Session=Depends(get_db),_:bool=Depends(auth)):
  return [{"id":n.id,"title":n.title,"body":n.body,"created_at":n.created_at.isoformat()} for n in s.query(Notice).order_by(Notice.id.desc()).limit(30).all()]
