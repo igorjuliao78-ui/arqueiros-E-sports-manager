@@ -394,7 +394,16 @@ def process_duel_photo(chat,file_id):
   with SessionLocal() as s:
    comps=s.query(Competition).order_by(Competition.id.desc()).all()
    comp=None
-   m=Match(competition_id=comp.id if comp else None,home="ARQUEIROS E-SPORTS",away=parsed["team"],home_score=parsed["scores"][0] if len(parsed["scores"])>0 else None,away_score=parsed["scores"][1] if len(parsed["scores"])>1 else None,status="Pendente")
+   hs=parsed["scores"][0] if len(parsed["scores"])>0 else None
+   aw=parsed["scores"][1] if len(parsed["scores"])>1 else None
+   since=datetime.utcnow()-timedelta(hours=24)
+   duplicate=None
+   if hs is not None and aw is not None:
+    duplicate=s.query(Match).filter(Match.home=="ARQUEIROS E-SPORTS",Match.away==parsed["team"],Match.home_score==hs,Match.away_score==aw,Match.created_at>=since,Match.status.in_(["Pendente","Aprovado"])).first()
+   if duplicate:
+    send(chat,f"Possível print duplicado. Já existe o confronto #{duplicate.id} ({duplicate.status}) contra {duplicate.away} com placar {duplicate.home_score} x {duplicate.away_score}. Não registrei novamente.",menu=True)
+    return
+   m=Match(competition_id=None,home="ARQUEIROS E-SPORTS",away=parsed["team"],home_score=hs,away_score=aw,status="Pendente")
    s.add(m);s.flush()
    known={normalize_name(p.name):p.name for p in s.query(Player).filter(Player.active.is_(True)).all()}
    unmatched=[]
