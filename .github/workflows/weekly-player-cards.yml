@@ -1,0 +1,25 @@
+name: Weekly Arqueiros Player Cards
+
+on:
+  schedule:
+    # Sunday 23:00 in Sao Paulo (UTC-3) = Monday 02:00 UTC
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+
+jobs:
+  send-player-cards:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send weekly player cards through Telegram bot
+        env:
+          APP_URL: https://arqueiros-e-sports-manager.onrender.com
+          WEEKLY_REPORT_TOKEN: ${{ secrets.WEEKLY_REPORT_TOKEN }}
+        run: |
+          if [ -z "$WEEKLY_REPORT_TOKEN" ]; then
+            echo "Missing repository secret WEEKLY_REPORT_TOKEN"
+            exit 1
+          fi
+          curl --fail --show-error --silent \
+            --request POST \
+            --header "X-Weekly-Token: $WEEKLY_REPORT_TOKEN" \
+            "$APP_URL/internal/weekly-cards"
