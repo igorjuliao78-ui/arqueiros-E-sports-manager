@@ -22,6 +22,8 @@ Sistema de gestão da Arqueiros E-Sports com painel administrativo e bot do Tele
 - Cards individuais em PNG com estatísticas gerais ou filtradas por competição.
 - Entrega semanal automática dos cards aos administradores e aos jogadores com ID do Telegram cadastrado.
 - Relatório mensal de resultados.
+- Relatório geral completo em PDF, com resumo da equipe, estatísticas individuais, competições, confrontos, resultados por jogador, títulos, disciplina, recrutamento e auditoria administrativa.
+- Banco PostgreSQL único compartilhado entre todos os administradores: alterações feitas pelo painel ou Telegram são persistidas no mesmo banco e ficam disponíveis para os demais.
 - Mural de comunicados administrativos, com envio opcional ao grupo Telegram.
 
 ## Publicação no Render
@@ -163,3 +165,10 @@ Na tabela **Confrontos recentes**, use **Definir competição**, **Corrigir plac
 
 No formulário **Registrar título**, selecione um jogador para registrar uma conquista individual. Deixe a opção de jogador sem seleção para registrar um título coletivo da equipe.
 
+
+
+## Relatório geral em PDF
+- No Telegram, qualquer administrador autorizado pode usar `/report` ou o botão **📄 Relatório Geral**.
+- No painel, use **Relatório geral PDF** no cabeçalho.
+- O arquivo é montado diretamente com os registros atuais do banco de dados compartilhado. O endpoint protegido é `/api/reports/full.pdf`.
+- Em produção, todos os administradores devem usar a mesma instância Render e o mesmo `DATABASE_URL` do PostgreSQL; não configure bancos separados por administrador.
