@@ -236,6 +236,31 @@ async def add_match(request:Request,s:Session=Depends(get_db),_:bool=Depends(aut
  if duplicate:raise HTTPException(409,f"Possível confronto duplicado: registro #{duplicate.id} ({duplicate.status}). Confira antes de cadastrar novamente.")
  m=Match(home=d["home"],away=d["away"],home_score=hs,away_score=aw,competition_id=cid)
  s.add(m);log(s,"match.submitted",m.home+" x "+m.away);s.commit();return {"ok":True,"id":m.id}
+@app.put("/api/matches/{mid}/competition")
+async def assign_match_competition(mid:int,request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ d=await request.json();m=s.get(Match,mid)
+ if not m:raise HTTPException(404,"Confronto não encontrado")
+ cid=d.get("competition_id")
+ comp=s.get(Competition,int(cid)) if cid else None
+ if not comp:raise HTTPException(400,"Selecione uma competição cadastrada.")
+ if m.status!="Pendente":raise HTTPException(400,"Somente confrontos pendentes podem ser alterados.")
+ m.competition_id=comp.id;log(s,"match.competition.assigned",f"#{mid}: {comp.name}");s.commit();return {"ok":True,"competition":comp.name}
+@app.put("/api/matches/{mid}")
+async def update_match_result(mid:int,request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ d=await request.json();m=s.get(Match,mid)
+ if not m:raise HTTPException(404,"Confronto não encontrado")
+ if m.status!="Pendente":raise HTTPException(400,"Somente confrontos pendentes podem ser corrigidos.")
+ for key in ("home","away"):
+  if key in d:
+   value=str(d[key]).strip()
+   if not value:raise HTTPException(400,"Nome de equipe obrigatório.")
+   setattr(m,key,value)
+ for key in ("home_score","away_score"):
+  if key in d:
+   value=int(d[key])
+   if value<0:raise HTTPException(400,"Placar não pode ser negativo.")
+   setattr(m,key,value)
+ log(s,"match.result.corrected",f"#{mid}: {m.home} {m.home_score}x{m.away_score} {m.away}");s.commit();return {"ok":True}
 @app.post("/api/matches/{mid}/{action}")
 def match_action(mid:int,action:str,s:Session=Depends(get_db),_:bool=Depends(auth)):
  if action not in ("approve","reject"):raise HTTPException(400,"Ação inválida")
@@ -294,7 +319,7 @@ async def create_notice(request:Request,s:Session=Depends(get_db),_:bool=Depends
  n=Notice(title=title,body=body);s.add(n);log(s,"notice.created",title);s.commit()
  group=os.getenv("TEAM_CHAT_ID","").strip();sent=False
  if group and BOT:
-  try:requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json={"chat_id":group,"text":"📢 "+title+"\\n\\n"+body},timeout=15).raise_for_status();sent=True
+  try:requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json={"chat_id":group,"text":"📢 "+title+"\n\n"+body},timeout=15).raise_for_status();sent=True
   except Exception:sent=False
  return {"ok":True,"id":n.id,"telegram_sent":sent,"message":"Comunicado salvo"+(" e enviado ao grupo." if sent else ". Configure TEAM_CHAT_ID para enviar ao grupo do Telegram.")}
 @app.delete("/api/notices/{nid}")
@@ -363,7 +388,7 @@ def weekly_player_image(p,metrics,subtitle="DESEMPENHO INDIVIDUAL"):
  ax.text(.5,.38,subtitle,ha="center",color=TEAM_METAL,fontsize=11,transform=ax.transAxes)
  labels=[("JOGOS",metrics["games"]),("VITÓRIAS",metrics["wins"]),("EMPATES",metrics["draws"]),("DERROTAS",metrics["losses"]),("GOLS MARCADOS",metrics["goals"]),("GOLS SOFRIDOS",metrics["conceded"]),("SALDO",metrics["goal_difference"]),("APROVEITAMENTO",str(metrics["win_rate"])+"%")]
  for i,(label,value) in enumerate(labels):
-  x=.12+(i%4)*.25;y=.25-(i//4)*.13
+  x=.12+(i%4)*.25;y=.27-(i//4)*.12
   ax.text(x,y,label,ha="center",color=TEAM_METAL,fontsize=9,transform=ax.transAxes)
   ax.text(x,y-.055,str(value),ha="center",color="white",fontsize=18,fontweight="bold",transform=ax.transAxes)
  ax.text(.5,.06,"ARQUEIROS E-SPORTS  •  RELATÓRIO SEMANAL",ha="center",color=TEAM_RED,fontsize=10,fontweight="bold",transform=ax.transAxes)
@@ -374,7 +399,7 @@ def player_card_image(pid:int,competition_id:Optional[int]=None,s:Session=Depend
  if not p:raise HTTPException(404,"Jogador não encontrado")
  if competition_id and not s.get(Competition,competition_id):raise HTTPException(404,"Competição não encontrada")
  subtitle="DESEMPENHO INDIVIDUAL"
- if competition_id:subtitle="DESEMPENHO NA COMPETIÇÃO #"+str(competition_id)
+ if competition_id:subtitle="DESEMPENHO: "+s.get(Competition,competition_id).name.upper()
  buf=weekly_player_image(p,player_metrics(s,p,competition_id),subtitle)
  return StreamingResponse(buf,media_type="image/png")
 @app.post("/internal/weekly-cards")
