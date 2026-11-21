@@ -132,7 +132,7 @@ def home(request:Request,token:str=""):
  if not TOKEN or not secrets.compare_digest(token,TOKEN):
   return HTMLResponse("<h2>Arqueiros Manager</h2><p>Painel protegido. Configure ADMIN_PANEL_TOKEN e acesse /?token=SEU_TOKEN.</p>",status_code=401)
  with SessionLocal() as s:
-  return templates.TemplateResponse("index.html",{"request":request,"token":token,"data":dashboard(s),"players":s.query(Player).order_by(Player.name).all(),"comps":s.query(Competition).all(),"matches":s.query(Match).order_by(Match.id.desc()).limit(40).all(),"audits":s.query(Audit).order_by(Audit.id.desc()).limit(15).all()})
+  return templates.TemplateResponse("index.html",{"request":request,"token":token,"data":dashboard(s),"players":s.query(Player).order_by(Player.name).all(),"comps":s.query(Competition).all(),"matches":s.query(Match).order_by(Match.id.desc()).limit(40).all(),"audits":s.query(Audit).order_by(Audit.id.desc()).limit(30).all(),"titles":s.query(Title).order_by(Title.won_at.desc()).all()})
 @app.get("/api/dashboard")
 def api_dashboard(s:Session=Depends(get_db),_:bool=Depends(auth)): return dashboard(s)
 @app.post("/api/players")
@@ -316,7 +316,7 @@ def process_duel_photo(chat,file_id):
    send(chat,"Não consegui reconhecer jogadores e placares individuais. Envie um print nítido com a descrição completa.");return
   with SessionLocal() as s:
    comps=s.query(Competition).order_by(Competition.id.desc()).all()
-   comp=comps[0] if len(comps)==1 else None
+   comp=None
    m=Match(competition_id=comp.id if comp else None,home="ARQUEIROS E-SPORTS",away=parsed["team"],home_score=parsed["scores"][0] if len(parsed["scores"])>0 else None,away_score=parsed["scores"][1] if len(parsed["scores"])>1 else None,status="Pendente")
    s.add(m);s.flush()
    known={normalize_name(p.name):p.name for p in s.query(Player).filter(Player.active.is_(True)).all()}
