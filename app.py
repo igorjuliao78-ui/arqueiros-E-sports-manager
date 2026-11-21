@@ -132,7 +132,9 @@ def home(request:Request,token:str=""):
  if not TOKEN or not secrets.compare_digest(token,TOKEN):
   return HTMLResponse("<h2>Arqueiros Manager</h2><p>Painel protegido. Configure ADMIN_PANEL_TOKEN e acesse /?token=SEU_TOKEN.</p>",status_code=401)
  with SessionLocal() as s:
-  return templates.TemplateResponse("index.html",{"request":request,"token":token,"data":dashboard(s),"players":s.query(Player).order_by(Player.name).all(),"comps":s.query(Competition).all(),"matches":s.query(Match).order_by(Match.id.desc()).limit(40).all(),"audits":s.query(Audit).order_by(Audit.id.desc()).limit(30).all(),"titles":s.query(Title).order_by(Title.won_at.desc()).all()})
+  players=s.query(Player).order_by(Player.name).all()
+  metrics={p.id:player_metrics(s,p) for p in players}
+  return templates.TemplateResponse("index.html",{"request":request,"token":token,"data":dashboard(s),"players":players,"metrics":metrics,"comps":s.query(Competition).all(),"matches":s.query(Match).order_by(Match.id.desc()).limit(40).all(),"audits":s.query(Audit).order_by(Audit.id.desc()).limit(30).all(),"titles":s.query(Title).order_by(Title.won_at.desc()).all()})
 @app.get("/api/dashboard")
 def api_dashboard(s:Session=Depends(get_db),_:bool=Depends(auth)): return dashboard(s)
 @app.post("/api/players")
