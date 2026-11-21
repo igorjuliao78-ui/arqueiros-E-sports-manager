@@ -441,46 +441,56 @@ def send(chat,text,menu=False,keyboard=None):
  payload={"chat_id":chat,"text":"🏹 Menu aberto. Escolha uma opção:" if menu else "🏹 Toque em MENU para abrir as opções.","reply_markup":{"keyboard":keyboard,"resize_keyboard":True,"is_persistent":True}}
  requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json=payload,timeout=15).raise_for_status()
 def normalize_name(value):
- value=unicodedata.normalize("NFKD",value).encode("ascii","ignore").decode().casefold()
+ value=unicodedata.normalize("NFKD",str(value)).encode("ascii","ignore").decode().casefold()
  return re.sub(r"[^a-z0-9]","",value)
-def parse_duel_ocr(text):
- lines=[re.sub(r"\s+"," ",x).strip() for x in text.splitlines() if x.strip()]
- scores=[];stats=[];team="Equipe adversária"
+def parse_duel_ocr(text,roster_names=None):
+ lines=[re.sub(r"\\s+"," ",x).strip() for x in text.splitlines() if x.strip()]
+ roster={normalize_name(x):x for x in (roster_names or []) if normalize_name(x)}
+ scores=[];stats=[];team="Equipe adversária";aqr_side=0
  for line in lines:
-  m=re.search(r"CL[ÃA]O?\s*:?\s*(\d+)\b",line,re.I)
-  if m:scores.append(int(m.group(1)))
-  t=re.search(r"ARQUEIROS\s+E-SPORTS\s*[x×]\s*(.+)",line,re.I)
-  if t:team=t.group(1).strip()
-  # Aceita jogador com ou sem numeração: "1. ALVIN 1 x 1 ADV".
-  m=re.match(r"^\s*(?:\d+\s*[.)➤>»:-]?\s*)?(.+?)\s+(\d+)\s*[x×]\s*(\d+)(?:\s+(.+))?$",line,re.I)
-  if m:
-   player=m.group(1).strip(" •➤».-:")
-   if normalize_name(player) not in ("titulares","placar","cla","federacaomng","arquieroseports"):
-    stats.append({"player":player,"gf":int(m.group(2)),"ga":int(m.group(3)),"opponent":(m.group(4) or "").strip()})
+  clan=re.search(r"CL[ÃA]O?\\s*:?\\s*(\\d*)\\s*$",line,re.I)
+  if clan:scores.append(int(clan.group(1)) if clan.group(1) else None)
+  tag=re.search(r"\\bAQR\\b\\s*[x×]\\s*([^\\s|]+)",line,re.I)
+  if tag:team=tag.group(1).strip(".,:;");aqr_side=0
+  else:
+   reverse=re.search(r"([^\\s|]+)\\s*[x×]\\s*\\bAQR\\b",line,re.I)
+   if reverse:team=reverse.group(1).strip(".,:;");aqr_side=1
+   else:
+    fallback=re.search(r"ARQUEIROS\\s+E-SPORTS\\s*[x×]\\s*(.+)",line,re.I)
+    if fallback and team=="Equipe adversária":team=fallback.group(1).strip()
+  duel=re.match(r"^\\s*(?:\\d+\\s*[.)➤>»:-]?\\s*)?(.+?)\\s+(\\d+)\\s*[x×]\\s*(\\d+)(?:\\s+(.+))?$",line,re.I)
+  if not duel:continue
+  left=duel.group(1).strip(" •➤».-:");right=(duel.group(4) or "").strip(" •➤».-:")
+  left_key=normalize_name(left);right_key=normalize_name(right)
+  left_hits=[(k,v) for k,v in roster.items() if k and k in left_key]
+  right_hits=[(k,v) for k,v in roster.items() if k and k in right_key]
+  left_player=max(left_hits,key=lambda x:len(x[0])) if left_hits else None
+  right_player=max(right_hits,key=lambda x:len(x[0])) if right_hits else None
+  if bool(left_player)==bool(right_player):continue
+  first,second=int(duel.group(2)),int(duel.group(3))
+  if left_player:stats.append({"player":left_player[1],"gf":first,"ga":second,"opponent":right})
+  else:stats.append({"player":right_player[1],"gf":second,"ga":first,"opponent":left})
+ if aqr_side==1 and len(scores)>=2:scores=[scores[1],scores[0]]
  return {"team":team,"scores":scores,"stats":stats}
-def extract_duel_text(image):
- # Gera versões ampliadas e com contraste para prints de diferentes resoluções.
- from PIL import ImageOps, ImageFilter, ImageEnhance
+def extract_duel_text(image,roster_names=None):
+ from PIL import ImageOps, ImageFilter
  base=ImageOps.exif_transpose(image).convert("RGB")
  base.thumbnail((2400,2400))
  scale=2 if max(base.size)<1800 else 1
  if scale>1:base=base.resize((base.width*scale,base.height*scale),Image.Resampling.LANCZOS)
- gray=ImageOps.grayscale(base)
- gray=ImageOps.autocontrast(gray)
+ gray=ImageOps.grayscale(base);gray=ImageOps.autocontrast(gray)
  sharp=gray.filter(ImageFilter.UnsharpMask(radius=2,percent=180,threshold=3))
  threshold=sharp.point(lambda p:255 if p>155 else 0)
- try:
-  langs=pytesseract.get_languages(config="")
- except Exception as exc:
-  raise RuntimeError("O mecanismo Tesseract não está instalado no servidor.") from exc
+ try:langs=pytesseract.get_languages(config="")
+ except Exception as exc:raise RuntimeError("O mecanismo Tesseract não está instalado no servidor.") from exc
  lang="+".join(x for x in ("por","eng") if x in langs) or ("eng" if "eng" in langs else (langs[0] if langs else ""))
  if not lang:raise RuntimeError("Tesseract instalado, mas nenhum idioma OCR está disponível.")
  candidates=[]
  for candidate in (sharp,threshold,ImageOps.invert(threshold)):
   for psm in (6,11,4):
    txt=pytesseract.image_to_string(candidate,lang=lang,config=f"--oem 3 --psm {psm}")
-   parsed=parse_duel_ocr(txt)
-   score=len(parsed["stats"])*10+min(len(parsed["scores"]),2)*2
+   parsed=parse_duel_ocr(txt,roster_names)
+   score=len(parsed["stats"])*10+sum(x is not None for x in parsed["scores"])*2+(parsed["team"]!="Equipe adversária")
    candidates.append((score,txt))
  return max(candidates,key=lambda item:item[0])[1]
 def process_duel_photo(chat,file_id):
@@ -488,20 +498,17 @@ def process_duel_photo(chat,file_id):
   meta=requests.get("https://api.telegram.org/bot"+BOT+"/getFile",params={"file_id":file_id},timeout=20).json()
   if not meta.get("ok"):raise ValueError("Imagem não localizada")
   path=meta["result"]["file_path"];download=requests.get("https://api.telegram.org/file/bot"+BOT+"/"+path,timeout=30)
-  download.raise_for_status()
-  image=Image.open(io.BytesIO(download.content))
-  text=extract_duel_text(image)
-  parsed=parse_duel_ocr(text)
+  download.raise_for_status();image=Image.open(io.BytesIO(download.content))
+  with SessionLocal() as s:roster_names=[p.name for p in s.query(Player).filter(Player.active.is_(True)).all()]
+  text=extract_duel_text(image,roster_names);parsed=parse_duel_ocr(text,roster_names)
   if not parsed["stats"]:
-   send(chat,"Não consegui identificar linhas de jogadores com placares. Confira se o print está completo, sem cortes e com boa resolução. Tente enviar a imagem original, não uma captura comprimida.")
+   send(chat,"Não encontrei jogadores da AQR com placares individuais. Confira se os nomes estão cadastrados no elenco e se o print está completo e legível.")
    return
   with SessionLocal() as s:
    comps=s.query(Competition).order_by(Competition.id.desc()).all()
-   comp=None
    hs=parsed["scores"][0] if len(parsed["scores"])>0 else None
    aw=parsed["scores"][1] if len(parsed["scores"])>1 else None
-   since=datetime.utcnow()-timedelta(hours=24)
-   duplicate=None
+   since=datetime.utcnow()-timedelta(hours=24);duplicate=None
    if hs is not None and aw is not None:
     duplicate=s.query(Match).filter(Match.home=="ARQUEIROS E-SPORTS",Match.away==parsed["team"],Match.home_score==hs,Match.away_score==aw,Match.created_at>=since,Match.status.in_(["Pendente","Aprovado"])).first()
    if duplicate:
@@ -510,37 +517,29 @@ def process_duel_photo(chat,file_id):
    m=Match(competition_id=None,home="ARQUEIROS E-SPORTS",away=parsed["team"],home_score=hs,away_score=aw,status="Pendente")
    s.add(m);s.flush()
    known={normalize_name(p.name):p.name for p in s.query(Player).filter(Player.active.is_(True)).all()}
-   unmatched=[]
    for row in parsed["stats"]:
     key=normalize_name(row["player"])
     if key in known:row["player"]=known[key]
     else:
      best=difflib.get_close_matches(key,list(known),n=1,cutoff=.82)
      if best:row["player"]=known[best[0]]
-     else:unmatched.append(row["player"])
     s.add(MatchPlayerStat(match_id=m.id,player_name=row["player"],opponent_name=row["opponent"],goals_for=row["gf"],goals_against=row["ga"]))
    log(s,"duel.ocr.pending",f"#{m.id}");s.commit();mid=m.id
-  lines=[f"CONFRONTO #{mid} — {parsed['team']}",f"Placar dos clãs: {parsed['scores'][0] if len(parsed['scores'])>0 else '?'} x {parsed['scores'][1] if len(parsed['scores'])>1 else '?'}","Jogadores:"]
-  for row in parsed["stats"]:lines.append(f"{row['player']} — {row['gf']} x {row['ga']}")
-  if unmatched:lines.append("NOMES NÃO RECONHECIDOS: "+", ".join(unmatched)+" — não aprove até corrigir.")
-  if comp:lines.append("Competição associada: "+comp.name)
-  elif len(comps)>1:
-   COMPETITION_PICK_STATE[str(chat)]=mid
-   lines.append("Qual competição corresponde a este confronto? Responda com o nome exatamente como aparece no cadastro.")
+  lines=[f"CONFRONTO #{mid} — AQR x {parsed['team']}",f"Placar dos clãs: {hs if hs is not None else '?'} x {aw if aw is not None else '?'}","Jogadores da AQR:"]
+  for row in parsed["stats"]:lines.append(f"{row['player']} — {row['gf']} x {row['ga']} (vs. {row['opponent'] or 'adversário não identificado'})")
+  if len(comps)>1:
+   COMPETITION_PICK_STATE[str(chat)]=mid;lines.append("Qual competição corresponde a este confronto? Responda com o nome exatamente como aparece no cadastro.")
   elif len(comps)==1:
-   COMPETITION_PICK_STATE[str(chat)]=mid
-   lines.append("Confirme a competição deste confronto respondendo exatamente: "+comps[0].name)
+   COMPETITION_PICK_STATE[str(chat)]=mid;lines.append("Confirme a competição deste confronto respondendo exatamente: "+comps[0].name)
   else:
-   COMPETITION_PICK_STATE[str(chat)]=mid
-   lines.append("Ainda não há competição cadastrada. Use 🏅 Adicionar competição; depois informe o nome dela para associar este confronto.")
+   COMPETITION_PICK_STATE[str(chat)]=mid;lines.append("Ainda não há competição cadastrada. Use 🏅 Adicionar competição; depois informe o nome dela para associar este confronto.")
   lines.append(f"Para aprovar: /aprovar {mid} | rejeitar: /rejeitar {mid}")
-  send(chat,"\n".join(lines),menu=True)
+  send(chat,"\\n".join(lines),menu=True)
  except Exception as e:
   detail=str(e)
   if "tesseract" in detail.casefold() or "idioma OCR" in detail.casefold():
    send(chat,"O leitor de imagens não está disponível corretamente no servidor. O administrador precisa aguardar a atualização do serviço.")
-  else:
-   send(chat,"Falha na leitura da imagem. Tente novamente com o print original e mais nítido. Detalhe: "+detail[:180])
+  else:send(chat,"Falha na leitura da imagem. Tente novamente com o print original e mais nítido. Detalhe: "+detail[:180])
 PLAYER_ADD_STATE={}
 PLAYER_EDIT_STATE={}
 PLAYER_CARD_STATE=set()
