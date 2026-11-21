@@ -151,28 +151,38 @@ def card(s:Session=Depends(get_db),_:bool=Depends(auth)):
  ax.set_title("ARQUEIROS E-SPORTS | RANKING",color="white");ax.tick_params(colors="white");ax.set_xlabel("Pontos",color="white")
  for sp in ax.spines.values():sp.set_visible(False)
  fig.tight_layout();buf=io.BytesIO();fig.savefig(buf,format="png",dpi=150,facecolor=fig.get_facecolor());plt.close(fig);buf.seek(0);return StreamingResponse(buf,media_type="image/png")
-def send(chat,text):
- if BOT:requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json={"chat_id":chat,"text":text},timeout=15).raise_for_status()
+def send(chat,text,menu=False):
+ payload={"chat_id":chat,"text":text}
+ if menu:
+  payload["reply_markup"]={"keyboard":[[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"❔ Ajuda"},{"text":"🏹 Menu"}]],"resize_keyboard":True}
+ if BOT:requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json=payload,timeout=15).raise_for_status()
 @app.post("/telegram/webhook")
 async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]=Header(default=None)):
  if HOOK and not secrets.compare_digest(x_telegram_bot_api_secret_token or "",HOOK):raise HTTPException(403,"Webhook inválido")
  update=await request.json();msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));parts=msg.get("text","").strip().split()
  if not chat:return {"ok":True}
  cmd=parts[0].split("@")[0].lower() if parts else ""
+ cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","❔ Ajuda":"/help","🏹 Menu":"/menu"}.get(cmd,cmd)
  # /id e /start são públicos para facilitar a configuração inicial; os demais comandos exigem autorização.
  if cmd=="/id":
   send(chat,f"Seu ID do Telegram é: {uid}\nEnvie esse número ao administrador para liberar o acesso.")
   return {"ok":True}
  if cmd=="/start":
-  send(chat,"🏹 ARQUEIROS E-SPORTS MANAGER\nPara liberar comandos administrativos, envie seu ID ao responsável. Use /id para consultar seu ID.")
+  if uid in ADMINS:
+   send(chat,"🏹 ARQUEIROS E-SPORTS MANAGER\nEscolha uma opção nos botões abaixo.",menu=True)
+  else:
+   send(chat,"🏹 ARQUEIROS E-SPORTS MANAGER\nPara liberar comandos administrativos, envie seu ID ao responsável. Use /id para consultar seu ID.")
   return {"ok":True}
  if uid not in ADMINS:
   send(chat,"Acesso restrito. Use /id e peça ao administrador para liberar seu usuário.")
   return {"ok":True}
+ if cmd=="/menu":
+  send(chat,"🏹 Menu principal. Escolha uma opção:",menu=True)
+  return {"ok":True}
  with SessionLocal() as s:
   d=dashboard(s)
   if cmd in ("/help","/comandos"):
-   out="🏹 ARQUEIROS MANAGER\n/stats - resumo geral\n/jogadores - lista de jogadores ativos\n/pendentes - resultados aguardando aprovação\n/aprovar ID - aprova resultado\n/rejeitar ID - rejeita resultado\n/ranking - classificação"
+   out="🏹 ARQUEIROS MANAGER\nUse os botões do menu ou os comandos:\n/stats - resumo geral\n/jogadores - lista de jogadores ativos\n/pendentes - resultados aguardando aprovação\n/aprovar ID - aprova resultado\n/rejeitar ID - rejeita resultado\n/ranking - classificação\n/menu - abrir botões"
   elif cmd=="/stats":out=f"Jogadores: {d['players']}\nCompetições: {d['competitions']}\nPartidas aprovadas: {d['approved']}\nPendentes: {d['pending']}"
   elif cmd=="/jogadores":
    rows=s.query(Player).filter(Player.active.is_(True)).order_by(Player.name).all()
@@ -192,4 +202,4 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
      out=f"Resultado #{m.id} {m.status.lower()} com sucesso."
   elif cmd=="/ranking":out="\n".join(f"{i}. {r['team']} — {r['PTS']} pts" for i,r in enumerate(d["ranking"],1)) or "Sem resultados aprovados."
   else:out="Comando não reconhecido. Use /help."
- send(chat,out);return {"ok":True}
+ send(chat,out,menu=True);return {"ok":True}
