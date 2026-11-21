@@ -178,9 +178,9 @@ def send(chat,text,menu=False):
  if not BOT:return
  buf=card_image("ARQUEIROS E-SPORTS",str(text).splitlines() or [" "])
  requests.post("https://api.telegram.org/bot"+BOT+"/sendPhoto",data={"chat_id":chat,"caption":"🏹 "+str(text)[:900]},files={"photo":("arqueiros.png",buf.getvalue(),"image/png")},timeout=30).raise_for_status()
- if menu:
-  payload={"chat_id":chat,"text":"🏹 Menu de opções","reply_markup":{"keyboard":[[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"➕ Adicionar jogador"},{"text":"📥 Cadastrar elenco"}],[{"text":"❔ Ajuda"},{"text":"🏹 Menu"}]],"resize_keyboard":True}}
-  requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json=payload,timeout=15).raise_for_status()
+ keyboard=[[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"➕ Adicionar jogador"},{"text":"📥 Cadastrar elenco"}],[{"text":"❔ Ajuda"},{"text":"⬅️ Fechar menu"}]] if menu else [[{"text":"🏹 MENU"}]]
+ payload={"chat_id":chat,"text":"🏹 Menu aberto. Escolha uma opção:" if menu else "🏹 Toque em MENU para abrir as opções.","reply_markup":{"keyboard":keyboard,"resize_keyboard":True,"is_persistent":True}}
+ requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json=payload,timeout=15).raise_for_status()
 def normalize_name(value):
  value=unicodedata.normalize("NFKD",value).encode("ascii","ignore").decode().casefold()
  return re.sub(r"[^a-z0-9]","",value)
@@ -237,7 +237,7 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
  msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));raw_text=msg.get("text","").strip();parts=raw_text.split()
  if not chat:return {"ok":True}
  cmd=raw_text.split("@")[0].lower() if raw_text.startswith("/") else raw_text
- cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","📥 Cadastrar elenco":"/addroster","❔ Ajuda":"/help","🏹 Menu":"/menu"}.get(cmd,cmd)
+ cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","📥 Cadastrar elenco":"/addroster","❔ Ajuda":"/help","🏹 Menu":"/menu","🏹 MENU":"/menu","⬅️ Fechar menu":"/closemenu"}.get(cmd,cmd)
  # /id e /start são públicos para facilitar a configuração inicial; os demais comandos exigem autorização.
  if cmd=="/id":
   send(chat,f"Seu ID do Telegram é: {uid}\nEnvie esse número ao administrador para liberar o acesso.")
@@ -291,6 +291,9 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
   return {"ok":True}
  if cmd=="/menu":
   send(chat,"🏹 Menu principal. Escolha uma opção:",menu=True)
+  return {"ok":True}
+ if cmd=="/closemenu":
+  send(chat,"Menu recolhido. Use o botão fixo 🏹 MENU para abrir as opções.")
   return {"ok":True}
  with SessionLocal() as s:
   d=dashboard(s)
