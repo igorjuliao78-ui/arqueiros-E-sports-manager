@@ -13,6 +13,13 @@ import matplotlib.pyplot as plt
 import requests
 import pytesseract
 from PIL import Image
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether
+from xml.sax.saxutils import escape as xml_escape
 
 URL=os.getenv("DATABASE_URL","sqlite:///./arqueiros.db")
 if URL.startswith("postgres://"): URL=URL.replace("postgres://","postgresql+psycopg2://",1)
@@ -296,6 +303,75 @@ def competition_ranking(cid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
    else:x["D"]+=1
    x["SG"]=x["GP"]-x["GC"]
  return {"competition":c.name,"ranking":sorted(table.values(),key=lambda x:(-x["PTS"],-x["SG"],-x["GP"],x["team"]))}
+def build_full_report(s):
+ buf=io.BytesIO()
+ doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=14*mm,leftMargin=14*mm,topMargin=15*mm,bottomMargin=15*mm,title="Relatorio Geral Arqueiros E-Sports")
+ styles=getSampleStyleSheet()
+ styles.add(ParagraphStyle(name="ReportTitle",parent=styles["Title"],fontName="Helvetica-Bold",fontSize=20,textColor=colors.HexColor("#9f1724"),alignment=TA_CENTER,spaceAfter=5))
+ styles.add(ParagraphStyle(name="Section",parent=styles["Heading2"],fontSize=12,textColor=colors.HexColor("#9f1724"),spaceBefore=10,spaceAfter=5))
+ styles.add(ParagraphStyle(name="SmallCell",parent=styles["BodyText"],fontSize=7.5,leading=9))
+ story=[]
+ def para(value,style="SmallCell"):
+  return Paragraph(xml_escape(str(value if value is not None else "-")).replace("\\n","<br/>"),styles[style])
+ def add_table(headers,rows,widths=None):
+  data=[[para(x) for x in headers]]+[[para(x) for x in row] for row in rows]
+  t=Table(data,colWidths=widths,repeatRows=1,hAlign="LEFT")
+  t.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#262630")),("TEXTCOLOR",(0,0),(-1,0),colors.white),("GRID",(0,0),(-1,-1),.35,colors.HexColor("#b8b8c0")),("VALIGN",(0,0),(-1,-1),"TOP"),("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor("#f1f1f4")]),("LEFTPADDING",(0,0),(-1,-1),4),("RIGHTPADDING",(0,0),(-1,-1),4),("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),4)]))
+  story.append(t);story.append(Spacer(1,5))
+ players=s.query(Player).order_by(Player.name).all()
+ comps=s.query(Competition).order_by(Competition.name).all()
+ matches=s.query(Match).order_by(Match.created_at.desc(),Match.id.desc()).all()
+ approved=[m for m in matches if m.status=="Aprovado"]
+ pending=[m for m in matches if m.status=="Pendente"]
+ wins=sum(1 for m in approved if m.home=="ARQUEIROS E-SPORTS" and m.home_score is not None and m.away_score is not None and m.home_score>m.away_score)
+ draws=sum(1 for m in approved if m.home=="ARQUEIROS E-SPORTS" and m.home_score is not None and m.home_score==m.away_score)
+ losses=sum(1 for m in approved if m.home=="ARQUEIROS E-SPORTS" and m.home_score is not None and m.away_score is not None and m.home_score<m.away_score)
+ team_matches=[m for m in approved if m.home=="ARQUEIROS E-SPORTS"]
+ goals=sum(m.home_score or 0 for m in team_matches);conceded=sum(m.away_score or 0 for m in team_matches)
+ titles=s.query(Title).order_by(Title.won_at.desc()).all()
+ story += [para("ARQUEIROS E-SPORTS","ReportTitle"),para("RELATORIO GERAL COMPLETO — "+datetime.now().strftime("%d/%m/%Y %H:%M"),"Normal"),Spacer(1,8),para("1. RESUMO DA EQUIPE","Section")]
+ add_table(["Indicador","Total"],[["Jogadores cadastrados",len(players)],["Jogadores ativos",sum(1 for p in players if p.active)],["Competições",len(comps)],["Confrontos registrados",len(matches)],["Confrontos aprovados",len(approved)],["Confrontos pendentes",len(pending)],["Vitórias / Empates / Derrotas",f"{wins} / {draws} / {losses}"],["Gols marcados / sofridos",f"{goals} / {conceded}"],["Saldo de gols",goals-conceded],["Aproveitamento",f"{(wins/(wins+draws+losses)*100):.1f}%" if wins+draws+losses else "0%"],["Títulos registrados",len(titles)]],[75*mm,85*mm])
+ story.append(para("2. ESTATÍSTICAS INDIVIDUAIS","Section"))
+ player_rows=[]
+ for p in players:
+  m=player_metrics(s,p)
+  player_rows.append([p.name,"Ativo" if p.active else "Inativo",m["games"],f'{m["wins"]}-{m["draws"]}-{m["losses"]}',m["goals"],m["conceded"],m["goal_difference"],f'{m["win_rate"]}%'])
+ add_table(["Jogador","Status","J","V-E-D","GM","GS","Saldo","Aprov."],player_rows,[37*mm,18*mm,10*mm,20*mm,12*mm,12*mm,14*mm,16*mm])
+ story.append(para("3. COMPETIÇÕES E RESULTADOS","Section"))
+ for comp in comps:
+  cm=[m for m in matches if m.competition_id==comp.id]
+  story.append(para(f'{comp.name} — {comp.kind} — {comp.season or "Temporada não informada"}'))
+  add_table(["ID","Data","Confronto","Placar","Status"],[[m.id,m.created_at.strftime("%d/%m/%Y") if m.created_at else "-",m.home+" x "+m.away,f'{m.home_score if m.home_score is not None else "?"} x {m.away_score if m.away_score is not None else "?"}',m.status] for m in cm] or [["-","-","Sem confrontos","-","-"]],[12*mm,22*mm,76*mm,20*mm,20*mm])
+ story.append(para("Confrontos sem competição vinculada","Section"))
+ unassigned=[m for m in matches if not m.competition_id]
+ add_table(["ID","Data","Confronto","Placar","Status"],[[m.id,m.created_at.strftime("%d/%m/%Y") if m.created_at else "-",m.home+" x "+m.away,f'{m.home_score if m.home_score is not None else "?"} x {m.away_score if m.away_score is not None else "?"}',m.status] for m in unassigned] or [["-","-","Nenhum","-","-"]],[12*mm,22*mm,76*mm,20*mm,20*mm])
+ story.append(para("4. DESEMPENHO POR JOGADOR NOS CONFRONTOS","Section"))
+ stats=s.query(MatchPlayerStat).join(Match,Match.id==MatchPlayerStat.match_id).filter(Match.status=="Aprovado").order_by(MatchPlayerStat.player_name,Match.id).all()
+ add_table(["Jogador AQR","Adversário","Placar individual","Confronto"],[[x.player_name,x.opponent_name or "-",f'{x.goals_for if x.goals_for is not None else "?"} x {x.goals_against if x.goals_against is not None else "?"}',f'#{x.match_id}'] for x in stats] or [["-","-","-","Sem estatísticas aprovadas"]],[42*mm,48*mm,35*mm,25*mm])
+ story.append(para("5. TÍTULOS CONQUISTADOS","Section"))
+ title_rows=[]
+ for t in titles:
+  player=s.get(Player,t.player_id) if t.player_id else None
+  comp=s.get(Competition,t.competition_id) if t.competition_id else None
+  title_rows.append([t.name,"Individual: "+player.name if player else "Equipe",comp.name if comp else "-",t.season or "-",t.won_at.strftime("%d/%m/%Y") if t.won_at else "-"])
+ add_table(["Título","Categoria","Competição","Temporada","Data"],title_rows or [["Nenhum título","-","-","-","-"]],[43*mm,35*mm,38*mm,24*mm,20*mm])
+ story.append(para("6. DISCIPLINA E RECRUTAMENTO","Section"))
+ discipline=s.query(Discipline).order_by(Discipline.id.desc()).all()
+ add_table(["Jogador","Motivo","Sanção"],[[d.player,d.reason,d.sanction or "-"] for d in discipline] or [["-","Nenhuma ocorrência","-"]],[35*mm,75*mm,45*mm])
+ recruits=s.query(Recruit).order_by(Recruit.id.desc()).all()
+ add_table(["Candidato","Posição","Contato","Status"],[[r.nickname,r.position or "-",r.contact or "-",r.status] for r in recruits] or [["-","Nenhum candidato","-","-"]],[38*mm,30*mm,48*mm,30*mm])
+ story.append(para("7. HISTÓRICO DE ALTERAÇÕES ADMINISTRATIVAS","Section"))
+ audits=s.query(Audit).order_by(Audit.created_at.desc(),Audit.id.desc()).limit(500).all()
+ add_table(["Data","Administrador","Ação","Detalhes"],[[a.created_at.strftime("%d/%m/%Y %H:%M") if a.created_at else "-",a.actor,a.action,a.detail] for a in audits] or [["-","-","Sem registros","-"]],[30*mm,28*mm,40*mm,55*mm])
+ def footer(canvas,document):
+  canvas.saveState();canvas.setFont("Helvetica",7);canvas.setFillColor(colors.HexColor("#666666"))
+  canvas.drawString(14*mm,8*mm,"Arqueiros E-Sports Manager — documento gerado a partir do banco compartilhado")
+  canvas.drawRightString(A4[0]-14*mm,8*mm,f"Página {document.page}");canvas.restoreState()
+ doc.build(story,onFirstPage=footer,onLaterPages=footer);buf.seek(0);return buf
+@app.get("/api/reports/full.pdf")
+def full_report_pdf(s:Session=Depends(get_db),_:bool=Depends(auth)):
+ buf=build_full_report(s)
+ return StreamingResponse(buf,media_type="application/pdf",headers={"Content-Disposition":'attachment; filename="arqueiros-relatorio-geral.pdf"'})
 @app.get("/api/reports/monthly")
 def monthly_report(month:str="",s:Session=Depends(get_db),_:bool=Depends(auth)):
  try: start=datetime.strptime(month or datetime.utcnow().strftime("%Y-%m"),"%Y-%m")
@@ -437,7 +513,7 @@ def send(chat,text,menu=False,keyboard=None):
  if not BOT:return
  buf=card_image("ARQUEIROS E-SPORTS",str(text).splitlines() or [" "])
  requests.post("https://api.telegram.org/bot"+BOT+"/sendPhoto",data={"chat_id":chat,"caption":"🏹 "+str(text)[:900]},files={"photo":("arqueiros.png",buf.getvalue(),"image/png")},timeout=30).raise_for_status()
- keyboard=keyboard or ([[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"➕ Adicionar jogador"},{"text":"🏅 Adicionar competição"}],[{"text":"✏️ Editar jogador"},{"text":"🗑️ Excluir jogador"}],[{"text":"✏️ Editar competição"},{"text":"🗑️ Excluir competição"}],[{"text":"📋 Competições"},{"text":"🏆 Títulos"}],[{"text":"🪪 Card do jogador"},{"text":"🛡️ Card da equipe"}],[{"text":"📚 Histórico"},{"text":"📈 Estatísticas por competição"}],[{"text":"❔ Ajuda"},{"text":"⬅️ Fechar menu"}]] if menu else [[{"text":"🏹 MENU"}]])
+ keyboard=keyboard or ([[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"➕ Adicionar jogador"},{"text":"🏅 Adicionar competição"}],[{"text":"✏️ Editar jogador"},{"text":"🗑️ Excluir jogador"}],[{"text":"✏️ Editar competição"},{"text":"🗑️ Excluir competição"}],[{"text":"📋 Competições"},{"text":"🏆 Títulos"}],[{"text":"🪪 Card do jogador"},{"text":"🛡️ Card da equipe"}],[{"text":"📚 Histórico"},{"text":"📈 Estatísticas por competição"}],[{"text":"📄 Relatório Geral"}],[{"text":"❔ Ajuda"},{"text":"⬅️ Fechar menu"}]] if menu else [[{"text":"🏹 MENU"}]])
  payload={"chat_id":chat,"text":"🏹 Menu aberto. Escolha uma opção:" if menu else "🏹 Toque em MENU para abrir as opções.","reply_markup":{"keyboard":keyboard,"resize_keyboard":True,"is_persistent":True}}
  requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json=payload,timeout=15).raise_for_status()
 def normalize_name(value):
@@ -572,7 +648,7 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
  msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));raw_text=msg.get("text","").strip();parts=raw_text.split()
  if not chat:return {"ok":True}
  cmd=raw_text.split("@")[0].lower() if raw_text.startswith("/") else raw_text
- cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","🏅 Adicionar competição":"/addcompetition","✏️ Editar jogador":"/editplayer","🗑️ Excluir jogador":"/deleteplayer","📋 Competições":"/competitions","🪪 Card do jogador":"/playercard","✏️ Editar competição":"/editcompetition","🗑️ Excluir competição":"/deletecompetition","🏆 Títulos":"/titles","🛡️ Card da equipe":"/teamcard","📚 Histórico":"/history","📈 Estatísticas por competição":"/competitionstats","❔ Ajuda":"/help","🏹 Menu":"/menu","🏹 MENU":"/menu","⬅️ Fechar menu":"/closemenu","📷 Alterar foto":"/foto","🗑️ Retirar da equipe":"/excluir","⏭️ Pular foto":"/pular","❌ Cancelar":"/cancelar","✅ Confirmar exclusão":"EXCLUIR"}.get(cmd,cmd)
+ cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","🏅 Adicionar competição":"/addcompetition","✏️ Editar jogador":"/editplayer","🗑️ Excluir jogador":"/deleteplayer","📋 Competições":"/competitions","🪪 Card do jogador":"/playercard","✏️ Editar competição":"/editcompetition","🗑️ Excluir competição":"/deletecompetition","🏆 Títulos":"/titles","🛡️ Card da equipe":"/teamcard","📚 Histórico":"/history","📈 Estatísticas por competição":"/competitionstats","📄 Relatório Geral":"/report","❔ Ajuda":"/help","🏹 Menu":"/menu","🏹 MENU":"/menu","⬅️ Fechar menu":"/closemenu","📷 Alterar foto":"/foto","🗑️ Retirar da equipe":"/excluir","⏭️ Pular foto":"/pular","❌ Cancelar":"/cancelar","✅ Confirmar exclusão":"EXCLUIR"}.get(cmd,cmd)
  # /id e /start são públicos para facilitar a configuração inicial; os demais comandos exigem autorização.
  if cmd=="/id":
   send(chat,f"Seu ID do Telegram é: {uid}\nEnvie esse número ao administrador para liberar o acesso.")
@@ -828,7 +904,7 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
  with SessionLocal() as s:
   d=dashboard(s)
   if cmd in ("/help","/comandos"):
-   out="🏹 ARQUEIROS MANAGER\nUse os botões do menu ou os comandos:\n/stats - resumo geral\n/jogadores - lista de jogadores ativos\n/pendentes - resultados aguardando aprovação\n/aprovar ID - aprova resultado\n/rejeitar ID - rejeita resultado\n/ranking - classificação\n/menu - abrir botões"
+   out="🏹 ARQUEIROS MANAGER\nUse os botões do menu ou os comandos:\n/stats - resumo geral\n/jogadores - lista de jogadores ativos\n/pendentes - resultados aguardando aprovação\n/aprovar ID - aprova resultado\n/rejeitar ID - rejeita resultado\n/ranking - classificação\n/report - relatório completo em PDF\n/menu - abrir botões"
   elif cmd=="/stats":out=f"Jogadores: {d['players']}\nCompetições: {d['competitions']}\nPartidas aprovadas: {d['approved']}\nPendentes: {d['pending']}"
   elif cmd=="/jogadores":
    rows=s.query(Player).filter(Player.active.is_(True)).order_by(Player.name).all();lines=[]
