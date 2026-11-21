@@ -1,0 +1,28 @@
+name: Validate Arqueiros Manager
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check Python syntax
+        run: python -m py_compile app.py
+      - name: Check Jinja template syntax
+        run: |
+          python -m pip install "jinja2==3.1.6"
+          python - <<'PY'
+          from jinja2 import Environment
+          from pathlib import Path
+          Environment().from_string(Path("templates/index.html").read_text(encoding="utf-8"))
+          print("Template Jinja válido")
+          PY
