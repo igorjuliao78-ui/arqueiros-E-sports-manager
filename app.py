@@ -240,17 +240,19 @@ def normalize_name(value):
  value=unicodedata.normalize("NFKD",value).encode("ascii","ignore").decode().casefold()
  return re.sub(r"[^a-z0-9]","",value)
 def parse_duel_ocr(text):
- lines=[re.sub(r"\s+"," ",x).strip() for x in text.splitlines() if x.strip()];scores=[];stats=[];team="Equipe adversária"
+ lines=[re.sub(r"\s+"," ",x).strip() for x in text.splitlines() if x.strip()]
+ scores=[];stats=[];team="Equipe adversária"
  for line in lines:
-  m=re.search(r"CL[AÃ]O?\s*:?\s*(\d+)",line,re.I)
+  m=re.search(r"CL[ÃA]O?\s*:?\s*(\d+)\b",line,re.I)
   if m:scores.append(int(m.group(1)))
   t=re.search(r"ARQUEIROS\s+E-SPORTS\s*[x×]\s*(.+)",line,re.I)
   if t:team=t.group(1).strip()
-  m=re.match(r"^\s*\d+\s*[➤>».-]?\s*(.+?)\s+(?:(\d+)\s*[x×]\s*(\d+)|[x×])\s*(.*)$",line,re.I)
+  # Aceita jogador com ou sem numeração: "1. ALVIN 1 x 1 ADV".
+  m=re.match(r"^\s*(?:\d+\s*[.)➤>»:-]?\s*)?(.+?)\s+(\d+)\s*[x×]\s*(\d+)(?:\s+(.+))?$",line,re.I)
   if m:
-   player=m.group(1).strip(" •➤».-")
-   if normalize_name(player) not in ("titulares","placar","cla","federacaomng"):
-    stats.append({"player":player,"gf":int(m.group(2)) if m.group(2) else None,"ga":int(m.group(3)) if m.group(3) else None,"opponent":(m.group(4) or "").strip()})
+   player=m.group(1).strip(" •➤».-:")
+   if normalize_name(player) not in ("titulares","placar","cla","federacaomng","arquieroseports"):
+    stats.append({"player":player,"gf":int(m.group(2)),"ga":int(m.group(3)),"opponent":(m.group(4) or "").strip()})
  return {"team":team,"scores":scores,"stats":stats}
 def process_duel_photo(chat,file_id):
  try:
@@ -259,22 +261,34 @@ def process_duel_photo(chat,file_id):
   path=meta["result"]["file_path"];raw=requests.get("https://api.telegram.org/file/bot"+BOT+"/"+path,timeout=30).content
   text=pytesseract.image_to_string(Image.open(io.BytesIO(raw)).convert("RGB"),lang="por+eng",config="--psm 6")
   parsed=parse_duel_ocr(text)
-  if not parsed["stats"]:send(chat,"Não consegui reconhecer os jogadores e placares. Envie uma imagem nítida mostrando toda a descrição.");return
+  if not parsed["stats"]:
+   send(chat,"Não consegui reconhecer jogadores e placares individuais. Envie um print nítido com a descrição completa.");return
   with SessionLocal() as s:
-   active_comp=s.query(Competition).order_by(Competition.id.desc()).first()
-   m=Match(competition_id=active_comp.id if active_comp else None,home="ARQUEIROS E-SPORTS",away=parsed["team"],home_score=parsed["scores"][0] if len(parsed["scores"])>0 else None,away_score=parsed["scores"][1] if len(parsed["scores"])>1 else None,status="Pendente");s.add(m);s.flush()
-   known={normalize_name(p.name):p.name for p in s.query(Player).filter(Player.active.is_(True)).all()};unmatched=[]
+   comps=s.query(Competition).order_by(Competition.id.desc()).all()
+   comp=comps[0] if len(comps)==1 else None
+   m=Match(competition_id=comp.id if comp else None,home="ARQUEIROS E-SPORTS",away=parsed["team"],home_score=parsed["scores"][0] if len(parsed["scores"])>0 else None,away_score=parsed["scores"][1] if len(parsed["scores"])>1 else None,status="Pendente")
+   s.add(m);s.flush()
+   known={normalize_name(p.name):p.name for p in s.query(Player).filter(Player.active.is_(True)).all()}
+   unmatched=[]
    for row in parsed["stats"]:
-    best=difflib.get_close_matches(normalize_name(row["player"]),list(known),n=1,cutoff=.78)
-    if best:row["player"]=known[best[0]]
-    else:unmatched.append(row["player"])
+    key=normalize_name(row["player"])
+    if key in known:row["player"]=known[key]
+    else:
+     best=difflib.get_close_matches(key,list(known),n=1,cutoff=.82)
+     if best:row["player"]=known[best[0]]
+     else:unmatched.append(row["player"])
     s.add(MatchPlayerStat(match_id=m.id,player_name=row["player"],opponent_name=row["opponent"],goals_for=row["gf"],goals_against=row["ga"]))
    log(s,"duel.ocr.pending",f"#{m.id}");s.commit();mid=m.id
   lines=[f"CONFRONTO #{mid} — {parsed['team']}",f"Placar dos clãs: {parsed['scores'][0] if len(parsed['scores'])>0 else '?'} x {parsed['scores'][1] if len(parsed['scores'])>1 else '?'}","Jogadores:"]
-  for row in parsed["stats"]:lines.append(f"{row['player']} — "+(f"{row['gf']} x {row['ga']}" if row["gf"] is not None and row["ga"] is not None else "PENDENTE"))
-  if unmatched:lines.append("Conferir nomes: "+", ".join(unmatched))
-  lines.append(f"Para confirmar: /aprovar {mid} | descartar: /rejeitar {mid}");send(chat,"\n".join(lines),menu=True)
- except Exception as e:send(chat,"Falha na leitura da imagem. Tente novamente com mais nitidez. "+str(e)[:120])
+  for row in parsed["stats"]:lines.append(f"{row['player']} — {row['gf']} x {row['ga']}")
+  if unmatched:lines.append("NOMES NÃO RECONHECIDOS: "+", ".join(unmatched)+" — não aprove até corrigir.")
+  if comp:lines.append("Competição associada: "+comp.name)
+  elif len(comps)>1:lines.append("Há várias competições cadastradas. Informe qual competição corresponde a este confronto.")
+  else:lines.append("Não identifiquei a competição. Cadastre a competição e informe qual corresponde a este confronto.")
+  lines.append(f"Para aprovar: /aprovar {mid} | rejeitar: /rejeitar {mid}")
+  send(chat,"\n".join(lines),menu=True)
+ except Exception as e:
+  send(chat,"Falha na leitura da imagem. Tente novamente com mais nitidez. "+str(e)[:120])
 PLAYER_ADD_STATE={}
 PLAYER_EDIT_STATE={}
 PLAYER_CARD_STATE=set()
@@ -436,6 +450,9 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
     if not m:out="Resultado não encontrado."
     elif m.status!="Pendente":out=f"Esse resultado já está: {m.status}."
     elif cmd=="/aprovar" and (m.home_score is None or m.away_score is None):out="Não é possível aprovar: o placar geral dos dois clãs precisa estar preenchido na descrição."
+    elif cmd=="/aprovar" and not m.competition_id:out="Não é possível aprovar: falta associar este confronto a uma competição."
+    elif cmd=="/aprovar" and s.query(MatchPlayerStat).filter(MatchPlayerStat.match_id==m.id).count()==0:out="Não é possível aprovar: nenhum placar individual foi reconhecido."
+    elif cmd=="/aprovar" and any(not s.query(Player).filter(Player.active.is_(True),Player.name==st.player_name).first() for st in s.query(MatchPlayerStat).filter(MatchPlayerStat.match_id==m.id).all()):out="Não é possível aprovar: há jogador não reconhecido. Corrija o nome antes de confirmar."
     else:
      m.status="Aprovado" if cmd=="/aprovar" else "Rejeitado"
      log(s,"match."+m.status.lower(),m.id);s.commit()
