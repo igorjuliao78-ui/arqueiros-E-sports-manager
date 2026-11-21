@@ -9,8 +9,8 @@ Sistema de gestão da Arqueiros E-Sports com painel administrativo e bot do Tele
 - Status do elenco: ativo, reserva, afastado e desligado, com filtro de busca.
 - Indicadores de aproveitamento, saldo de gols e estatísticas individuais por competição.
 - Cadastro, edição e exclusão de competições.
-- Registro e histórico de títulos conquistados.
-- Revisão manual dos jogadores e placares reconhecidos por OCR antes da aprovação.
+- Registro de títulos da equipe e títulos individuais por jogador.
+- Revisão manual dos jogadores, placares, competição e correção de confrontos reconhecidos por OCR antes da aprovação.
 - Registro, aprovação e rejeição de resultados.
 - Ranking automático por pontos, saldo e gols.
 - Registro disciplinar e recrutamento.
@@ -19,6 +19,8 @@ Sistema de gestão da Arqueiros E-Sports com painel administrativo e bot do Tele
 - Proteção contra possíveis confrontos duplicados (janela de 24 horas).
 - Ranking e relatórios por competição.
 - Relatório mensal de resultados e mural de comunicados.
+- Cards individuais em PNG com estatísticas gerais ou filtradas por competição.
+- Entrega semanal automática dos cards aos administradores e aos jogadores com ID do Telegram cadastrado.
 - Relatório mensal de resultados.
 - Mural de comunicados administrativos, com envio opcional ao grupo Telegram.
 
@@ -48,6 +50,7 @@ No serviço do Render, abra **Environment** (ou **Environment Variables**) e adi
 | `TELEGRAM_WEBHOOK_SECRET` | Segredo aleatório contendo somente letras, números, _ ou -. |
 | `DATABASE_URL` | URL de conexão PostgreSQL, se você criou um banco PostgreSQL. |
 | `TEAM_CHAT_ID` | (Opcional) ID do grupo Telegram da equipe para receber comunicados publicados no painel. |
+| `WEEKLY_REPORT_TOKEN` | Segredo exclusivo usado pelo workflow semanal de cards. Deve ser igual no Render e no GitHub Actions. |
 
 Para produção, recomendamos criar um PostgreSQL no Render e colocar em `DATABASE_URL` a **Internal Database URL** do banco, se o banco e o serviço estiverem na mesma região. Não publique essa URL.
 
@@ -138,3 +141,25 @@ Para publicar comunicados do painel também em um grupo, adicione o bot ao grupo
 ## Limites de segurança e próximos ajustes
 
 O painel atual usa um token administrativo compartilhado. Portanto, ainda não há contas individuais com permissões diferentes por administrador. Não compartilhe esse token; a implantação de perfis individuais exige uma tela de autenticação e gestão de contas antes de liberar permissões granulares.
+
+## Cards semanais e entrega aos jogadores
+
+O workflow `.github/workflows/weekly-player-cards.yml` está agendado para domingo às 23h no horário de Brasília (02h UTC de segunda-feira). Ele chama o serviço Render para gerar cards individuais atualizados.
+
+Para ativar:
+1. Gere um segredo longo e exclusivo para `WEEKLY_REPORT_TOKEN`.
+2. No Render, abra o serviço `arqueiros-manager` > **Environment** e crie `WEEKLY_REPORT_TOKEN` com esse valor.
+3. No GitHub, abra **Settings** > **Secrets and variables** > **Actions** > **New repository secret**.
+4. Crie outro segredo chamado `WEEKLY_REPORT_TOKEN` com exatamente o mesmo valor.
+5. Salve no Render e aguarde o serviço ficar **Live**. No GitHub, abra **Actions** e execute **Weekly Arqueiros Player Cards** manualmente para testar.
+
+O workflow sempre envia todos os cards aos administradores definidos em `TELEGRAM_ADMIN_IDS`. Para o jogador também receber somente o próprio card, cadastre o ID numérico do Telegram dele no campo **ID Telegram do jogador** no painel. O jogador pode descobrir esse número enviando `/id` ao bot e repassando ao administrador. O jogador precisa ter iniciado uma conversa com o bot pelo menos uma vez para que o Telegram permita o envio.
+
+## Corrigir confrontos pendentes pelo painel
+
+Na tabela **Confrontos recentes**, use **Definir competição**, **Corrigir placar** e **Conferir jogadores** antes de aprovar. O sistema bloqueia a aprovação quando faltam placares gerais, competição, estatísticas individuais ou quando existe um jogador que não está ativo no elenco.
+
+## Títulos individuais
+
+No formulário **Registrar título**, selecione um jogador para registrar uma conquista individual. Deixe a opção de jogador sem seleção para registrar um título coletivo da equipe.
+
