@@ -332,6 +332,8 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
    return {"ok":True}
   if state.get("action")=="photo" and value=="/pular":
    PLAYER_ADD_STATE.pop(uid,None);send(chat,"Cadastro concluído. O jogador ficará com ícone até receber uma foto.",menu=True);return {"ok":True}
+ if uid in PLAYER_CARD_STATE and cmd=="/cancelar":
+  PLAYER_CARD_STATE.discard(uid);send(chat,"Solicitação de card cancelada.",menu=True);return {"ok":True}
  if uid in PLAYER_CARD_STATE and raw_text and not raw_text.startswith("/"):
   with SessionLocal() as s:
    p=s.query(Player).filter(Player.name.ilike(raw_text.strip()),Player.active.is_(True)).first()
