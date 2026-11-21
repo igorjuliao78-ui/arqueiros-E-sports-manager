@@ -192,6 +192,21 @@ def player_stats(pid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
  p=s.get(Player,pid)
  if not p:raise HTTPException(404,"Jogador não encontrado")
  return {"player":p.name,"stats":player_metrics(s,p)}
+@app.get("/api/matches/{mid}/stats")
+def get_match_stats(mid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ m=s.get(Match,mid)
+ if not m:raise HTTPException(404,"Confronto não encontrado")
+ return {"match":{"id":m.id,"home":m.home,"away":m.away,"competition_id":m.competition_id},"stats":[{"id":x.id,"player_name":x.player_name,"opponent_name":x.opponent_name,"goals_for":x.goals_for,"goals_against":x.goals_against} for x in s.query(MatchPlayerStat).filter(MatchPlayerStat.match_id==mid).all()]}
+@app.put("/api/match-stats/{sid}")
+async def update_match_stat(sid:int,request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
+ d=await request.json();st=s.get(MatchPlayerStat,sid)
+ if not st:raise HTTPException(404,"Estatística não encontrada")
+ p=s.query(Player).filter(Player.active.is_(True),Player.name.ilike(str(d.get("player_name","")).strip())).first()
+ if not p:raise HTTPException(400,"Selecione um jogador ativo cadastrado.")
+ gf=d.get("goals_for");ga=d.get("goals_against")
+ if gf is None or ga is None or int(gf)<0 or int(ga)<0:raise HTTPException(400,"Informe os dois placares.")
+ st.player_name=p.name;st.opponent_name=str(d.get("opponent_name",st.opponent_name));st.goals_for=int(gf);st.goals_against=int(ga)
+ log(s,"match.player_stat.corrected",f"match={st.match_id}; player={p.name}; {gf}x{ga}");s.commit();return {"ok":True}
 @app.post("/api/matches")
 async def add_match(request:Request,s:Session=Depends(get_db),_:bool=Depends(auth)):
  d=await request.json()
