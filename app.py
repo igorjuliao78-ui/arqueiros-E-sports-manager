@@ -458,15 +458,43 @@ def parse_duel_ocr(text):
    if normalize_name(player) not in ("titulares","placar","cla","federacaomng","arquieroseports"):
     stats.append({"player":player,"gf":int(m.group(2)),"ga":int(m.group(3)),"opponent":(m.group(4) or "").strip()})
  return {"team":team,"scores":scores,"stats":stats}
+def extract_duel_text(image):
+ # Gera versões ampliadas e com contraste para prints de diferentes resoluções.
+ from PIL import ImageOps, ImageFilter, ImageEnhance
+ base=ImageOps.exif_transpose(image).convert("RGB")
+ base.thumbnail((2400,2400))
+ scale=2 if max(base.size)<1800 else 1
+ if scale>1:base=base.resize((base.width*scale,base.height*scale),Image.Resampling.LANCZOS)
+ gray=ImageOps.grayscale(base)
+ gray=ImageOps.autocontrast(gray)
+ sharp=gray.filter(ImageFilter.UnsharpMask(radius=2,percent=180,threshold=3))
+ threshold=sharp.point(lambda p:255 if p>155 else 0)
+ try:
+  langs=pytesseract.get_languages(config="")
+ except Exception as exc:
+  raise RuntimeError("O mecanismo Tesseract não está instalado no servidor.") from exc
+ lang="+".join(x for x in ("por","eng") if x in langs) or ("eng" if "eng" in langs else (langs[0] if langs else ""))
+ if not lang:raise RuntimeError("Tesseract instalado, mas nenhum idioma OCR está disponível.")
+ candidates=[]
+ for candidate in (sharp,threshold,ImageOps.invert(threshold)):
+  for psm in (6,11,4):
+   txt=pytesseract.image_to_string(candidate,lang=lang,config=f"--oem 3 --psm {psm}")
+   parsed=parse_duel_ocr(txt)
+   score=len(parsed["stats"])*10+min(len(parsed["scores"]),2)*2
+   candidates.append((score,txt))
+ return max(candidates,key=lambda item:item[0])[1]
 def process_duel_photo(chat,file_id):
  try:
   meta=requests.get("https://api.telegram.org/bot"+BOT+"/getFile",params={"file_id":file_id},timeout=20).json()
   if not meta.get("ok"):raise ValueError("Imagem não localizada")
-  path=meta["result"]["file_path"];raw=requests.get("https://api.telegram.org/file/bot"+BOT+"/"+path,timeout=30).content
-  text=pytesseract.image_to_string(Image.open(io.BytesIO(raw)).convert("RGB"),lang="por+eng",config="--psm 6")
+  path=meta["result"]["file_path"];download=requests.get("https://api.telegram.org/file/bot"+BOT+"/"+path,timeout=30)
+  download.raise_for_status()
+  image=Image.open(io.BytesIO(download.content))
+  text=extract_duel_text(image)
   parsed=parse_duel_ocr(text)
   if not parsed["stats"]:
-   send(chat,"Não consegui reconhecer jogadores e placares individuais. Envie um print nítido com a descrição completa.");return
+   send(chat,"Não consegui identificar linhas de jogadores com placares. Confira se o print está completo, sem cortes e com boa resolução. Tente enviar a imagem original, não uma captura comprimida.")
+   return
   with SessionLocal() as s:
    comps=s.query(Competition).order_by(Competition.id.desc()).all()
    comp=None
@@ -508,7 +536,11 @@ def process_duel_photo(chat,file_id):
   lines.append(f"Para aprovar: /aprovar {mid} | rejeitar: /rejeitar {mid}")
   send(chat,"\n".join(lines),menu=True)
  except Exception as e:
-  send(chat,"Falha na leitura da imagem. Tente novamente com mais nitidez. "+str(e)[:120])
+  detail=str(e)
+  if "tesseract" in detail.casefold() or "idioma OCR" in detail.casefold():
+   send(chat,"O leitor de imagens não está disponível corretamente no servidor. O administrador precisa aguardar a atualização do serviço.")
+  else:
+   send(chat,"Falha na leitura da imagem. Tente novamente com o print original e mais nítido. Detalhe: "+detail[:180])
 PLAYER_ADD_STATE={}
 PLAYER_EDIT_STATE={}
 PLAYER_CARD_STATE=set()
