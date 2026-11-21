@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, HTTPException, Header, Depends
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import create_engine, String, Integer, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import create_engine, String, Integer, Boolean, DateTime, ForeignKey, Text, inspect, text as sql_text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 import matplotlib
 matplotlib.use("Agg")
@@ -28,6 +28,7 @@ class Player(Base):
  nickname:Mapped[str]=mapped_column(String(100),default="")
  position:Mapped[str]=mapped_column(String(50),default="")
  team:Mapped[str]=mapped_column(String(100),default="")
+ photo_file_id:Mapped[Optional[str]]=mapped_column(String(255),nullable=True)
  active:Mapped[bool]=mapped_column(Boolean,default=True)
 class Competition(Base):
  __tablename__="competitions"
@@ -74,6 +75,9 @@ class Audit(Base):
  detail:Mapped[str]=mapped_column(Text,default="")
  created_at:Mapped[datetime]=mapped_column(DateTime,default=datetime.utcnow)
 Base.metadata.create_all(engine)
+with engine.begin() as conn:
+ columns={x["name"] for x in inspect(engine).get_columns("players")}
+ if "photo_file_id" not in columns: conn.execute(sql_text("ALTER TABLE players ADD COLUMN photo_file_id VARCHAR(255)"))
 with SessionLocal() as s:
  existing={p.name.casefold() for p in s.query(Player).all()}
  for player_name in ROSTER:
@@ -85,6 +89,7 @@ os.makedirs("static",exist_ok=True)
 app.mount("/static",StaticFiles(directory="static"),name="static")
 templates=Jinja2Templates(directory="templates")
 TOKEN=os.getenv("ADMIN_PANEL_TOKEN","")
+WEEKLY_TOKEN=os.getenv("WEEKLY_REPORT_TOKEN","")
 BOT=os.getenv("TELEGRAM_BOT_TOKEN","")
 ADMINS={x.strip() for x in os.getenv("TELEGRAM_ADMIN_IDS","").split(",") if x.strip()}
 HOOK=os.getenv("TELEGRAM_WEBHOOK_SECRET","")
@@ -168,17 +173,67 @@ def card(s:Session=Depends(get_db),_:bool=Depends(auth)):
  ax.set_title("ARQUEIROS E-SPORTS | RANKING",color="white");ax.tick_params(colors="white");ax.set_xlabel("Pontos",color="white")
  for sp in ax.spines.values():sp.set_visible(False)
  fig.tight_layout();buf=io.BytesIO();fig.savefig(buf,format="png",dpi=150,facecolor=fig.get_facecolor());plt.close(fig);buf.seek(0);return StreamingResponse(buf,media_type="image/png")
+TEAM_RED="#b51f2b";TEAM_DARK="#09090d";TEAM_METAL="#b8b8c0"
 def card_image(title,lines):
- fig,ax=plt.subplots(figsize=(10,max(3,1+len(lines)*.42)));fig.patch.set_facecolor("#101827");ax.set_facecolor("#101827");ax.axis("off")
- ax.text(.05,.94,title,transform=ax.transAxes,color="#f2c66d",fontsize=19,fontweight="bold",va="top")
- y=.84;step=.78/max(len(lines),1)
+ fig,ax=plt.subplots(figsize=(10,max(3,1+len(lines)*.42)));fig.patch.set_facecolor(TEAM_DARK);ax.set_facecolor(TEAM_DARK);ax.axis("off")
+ ax.add_patch(plt.Rectangle((0,0),1,.055,transform=ax.transAxes,color=TEAM_RED))
+ ax.add_patch(plt.Rectangle((0,.94),1,.06,transform=ax.transAxes,color=TEAM_RED))
+ ax.text(.05,.90,"🏹 ARQUEIROS E-SPORTS",transform=ax.transAxes,color=TEAM_METAL,fontsize=10,fontweight="bold",va="top")
+ ax.text(.05,.80,title,transform=ax.transAxes,color="white",fontsize=19,fontweight="bold",va="top")
+ y=.68;step=.62/max(len(lines),1)
  for line in lines:ax.text(.06,y,str(line),transform=ax.transAxes,color="white",fontsize=11,va="top",wrap=True);y-=step
  fig.tight_layout(pad=1.5);buf=io.BytesIO();fig.savefig(buf,format="png",dpi=150,facecolor=fig.get_facecolor());plt.close(fig);buf.seek(0);return buf
+def player_metrics(s,p):
+ games=s.query(MatchPlayerStat).join(Match,Match.id==MatchPlayerStat.match_id).filter(MatchPlayerStat.player_name==p.name,Match.status=="Aprovado").all()
+ played=[g for g in games if g.goals_for is not None and g.goals_against is not None]
+ wins=sum(g.goals_for>g.goals_against for g in played);draws=sum(g.goals_for==g.goals_against for g in played);losses=len(played)-wins-draws
+ return {"games":len(played),"wins":wins,"draws":draws,"losses":losses,"goals":sum(g.goals_for or 0 for g in played),"conceded":sum(g.goals_against or 0 for g in played)}
+def weekly_player_image(p,metrics):
+ fig=plt.figure(figsize=(8,5),facecolor=TEAM_DARK);ax=fig.add_axes([0,0,1,1]);ax.set_facecolor(TEAM_DARK);ax.axis("off")
+ ax.add_patch(plt.Rectangle((0,.94),1,.06,color=TEAM_RED,transform=ax.transAxes))
+ ax.add_patch(plt.Rectangle((0,0),1,.035,color=TEAM_RED,transform=ax.transAxes))
+ # Avatar ilustrado: inicial do jogador quando não há foto cadastrada.
+ avatar=None
+ if p.photo_file_id:
+  try:
+   meta=requests.get("https://api.telegram.org/bot"+BOT+"/getFile",params={"file_id":p.photo_file_id},timeout=15).json()
+   if meta.get("ok"):
+    path=meta["result"]["file_path"];raw=requests.get("https://api.telegram.org/file/bot"+BOT+"/"+path,timeout=20).content
+    avatar=Image.open(io.BytesIO(raw)).convert("RGB")
+  except Exception: avatar=None
+ if avatar is not None:
+  ia=fig.add_axes([.36,.52,.28,.38]);ia.imshow(avatar);ia.axis("off")
+ else:
+  ax.add_patch(plt.Circle((.5,.70),.14,color="#292930",transform=ax.transAxes,ec=TEAM_METAL,lw=2))
+  ax.text(.5,.70,(p.name[:1] or "?").upper(),ha="center",va="center",color="white",fontsize=38,fontweight="bold",transform=ax.transAxes)
+ ax.text(.5,.46,p.name.upper(),ha="center",color="white",fontsize=22,fontweight="bold",transform=ax.transAxes)
+ ax.text(.5,.38,"DESEMPENHO INDIVIDUAL",ha="center",color=TEAM_METAL,fontsize=11,transform=ax.transAxes)
+ labels=[("JOGOS",metrics["games"]),("VITÓRIAS",metrics["wins"]),("EMPATES",metrics["draws"]),("DERROTAS",metrics["losses"]),("GOLS MARCADOS",metrics["goals"]),("GOLS SOFRIDOS",metrics["conceded"])]
+ for i,(label,value) in enumerate(labels):
+  x=.18+(i%3)*.32;y=.25-(i//3)*.12
+  ax.text(x,y,label,ha="center",color=TEAM_METAL,fontsize=9,transform=ax.transAxes)
+  ax.text(x,y-.055,str(value),ha="center",color="white",fontsize=18,fontweight="bold",transform=ax.transAxes)
+ ax.text(.5,.06,"ARQUEIROS E-SPORTS  •  RELATÓRIO SEMANAL",ha="center",color=TEAM_RED,fontsize=10,fontweight="bold",transform=ax.transAxes)
+ buf=io.BytesIO();fig.savefig(buf,format="png",dpi=160,facecolor=fig.get_facecolor());plt.close(fig);buf.seek(0);return buf
+@app.post("/internal/weekly-cards")
+def weekly_cards(x_weekly_token:Optional[str]=Header(default=None)):
+ if not WEEKLY_TOKEN or not secrets.compare_digest(x_weekly_token or "",WEEKLY_TOKEN):raise HTTPException(403,"Token de relatório inválido")
+ if not BOT or not ADMINS:raise HTTPException(503,"Configure o bot e os administradores")
+ sent=0
+ with SessionLocal() as s:
+  players=s.query(Player).filter(Player.active.is_(True)).order_by(Player.name).all()
+  cards=[(p.name,weekly_player_image(p,player_metrics(s,p))) for p in players]
+ for admin in ADMINS:
+  for name,buf in cards:
+   requests.post("https://api.telegram.org/bot"+BOT+"/sendPhoto",data={"chat_id":admin,"caption":"🏹 Relatório semanal — "+name},files={"photo":(f"player-{name}.png",buf.getvalue(),"image/png")},timeout=30).raise_for_status()
+   sent+=1
+ return {"ok":True,"players":len(cards),"cards_sent":sent}
+
 def send(chat,text,menu=False):
  if not BOT:return
  buf=card_image("ARQUEIROS E-SPORTS",str(text).splitlines() or [" "])
  requests.post("https://api.telegram.org/bot"+BOT+"/sendPhoto",data={"chat_id":chat,"caption":"🏹 "+str(text)[:900]},files={"photo":("arqueiros.png",buf.getvalue(),"image/png")},timeout=30).raise_for_status()
- keyboard=[[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"➕ Adicionar jogador"},{"text":"📥 Cadastrar elenco"}],[{"text":"❔ Ajuda"},{"text":"⬅️ Fechar menu"}]] if menu else [[{"text":"🏹 MENU"}]]
+ keyboard=[[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"➕ Adicionar jogador"},{"text":"🏅 Adicionar competição"}],[{"text":"✏️ Editar jogador"},{"text":"🗑️ Excluir jogador"}],[{"text":"📋 Competições"},{"text":"❔ Ajuda"}],[{"text":"⬅️ Fechar menu"}]] if menu else [[{"text":"🏹 MENU"}]]
  payload={"chat_id":chat,"text":"🏹 Menu aberto. Escolha uma opção:" if menu else "🏹 Toque em MENU para abrir as opções.","reply_markup":{"keyboard":keyboard,"resize_keyboard":True,"is_persistent":True}}
  requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json=payload,timeout=15).raise_for_status()
 def normalize_name(value):
@@ -219,7 +274,9 @@ def process_duel_photo(chat,file_id):
   if unmatched:lines.append("Conferir nomes: "+", ".join(unmatched))
   lines.append(f"Para confirmar: /aprovar {mid} | descartar: /rejeitar {mid}");send(chat,"\n".join(lines),menu=True)
  except Exception as e:send(chat,"Falha na leitura da imagem. Tente novamente com mais nitidez. "+str(e)[:120])
-PLAYER_ADD_STATE=set()
+PLAYER_ADD_STATE={}
+PLAYER_EDIT_STATE={}
+COMPETITION_ADD_STATE=set()
 ROSTER=["Jesus「ΔΩŘ」","Carlos","CDS","SM7","Jackson","Rony","Julião","Wellinson","Guiih S.","Jefferson","Marinhoox","Diogo Lima","Miquéias","Eltom Pereira","Joab Junior","Ezequiel","Brunno Bass","Davi","Trinity","Adriel","Vitor","Pereira","Léo","Mateus","Gustavo"]
 @app.post("/telegram/webhook")
 async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]=Header(default=None)):
@@ -237,7 +294,7 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
  msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));raw_text=msg.get("text","").strip();parts=raw_text.split()
  if not chat:return {"ok":True}
  cmd=raw_text.split("@")[0].lower() if raw_text.startswith("/") else raw_text
- cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","📥 Cadastrar elenco":"/addroster","❔ Ajuda":"/help","🏹 Menu":"/menu","🏹 MENU":"/menu","⬅️ Fechar menu":"/closemenu"}.get(cmd,cmd)
+ cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","🏅 Adicionar competição":"/addcompetition","✏️ Editar jogador":"/editplayer","🗑️ Excluir jogador":"/deleteplayer","📋 Competições":"/competitions","❔ Ajuda":"/help","🏹 Menu":"/menu","🏹 MENU":"/menu","⬅️ Fechar menu":"/closemenu"}.get(cmd,cmd)
  # /id e /start são públicos para facilitar a configuração inicial; os demais comandos exigem autorização.
  if cmd=="/id":
   send(chat,f"Seu ID do Telegram é: {uid}\nEnvie esse número ao administrador para liberar o acesso.")
@@ -253,27 +310,70 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
   return {"ok":True}
  if msg.get("photo"):
   if uid not in ADMINS:send(chat,"Acesso restrito.");return {"ok":True}
+  state=PLAYER_ADD_STATE.get(uid) or PLAYER_EDIT_STATE.get(uid)
+  if state and state.get("action")=="photo":
+   with SessionLocal() as s:
+    p=s.get(Player,state["player_id"])
+    if p:p.photo_file_id=msg["photo"][-1]["file_id"];log(s,"player.photo.updated",p.name);s.commit();out=f"Foto de {p.name} atualizada!"
+    else:out="Jogador não encontrado."
+   PLAYER_ADD_STATE.pop(uid,None);PLAYER_EDIT_STATE.pop(uid,None);send(chat,out,menu=True);return {"ok":True}
   process_duel_photo(chat,msg["photo"][-1]["file_id"]);return {"ok":True}
- if uid in PLAYER_ADD_STATE and not cmd.startswith("/"):
-  name=msg.get("text","").strip()
-  if not name:
-   send(chat,"Envie o nome ou apelido do jogador.")
+ if uid in PLAYER_ADD_STATE:
+  state=PLAYER_ADD_STATE[uid];value=raw_text.strip()
+  if state.get("action")=="name" and value and not value.startswith("/"):
+   with SessionLocal() as s:
+    exists=s.query(Player).filter(Player.name.ilike(value)).first()
+    if exists:PLAYER_ADD_STATE.pop(uid,None);send(chat,f"⚠️ {value} já está cadastrado.",menu=True)
+    else:
+     p=Player(name=value);s.add(p);log(s,"player.created.telegram",value);s.commit();PLAYER_ADD_STATE[uid]={"action":"photo","player_id":p.id}
+     send(chat,f"Jogador {value} cadastrado. Agora envie a foto dele ou digite /pular para usar o ícone padrão.")
    return {"ok":True}
+  if state.get("action")=="photo" and value=="/pular":
+   PLAYER_ADD_STATE.pop(uid,None);send(chat,"Cadastro concluído. O jogador ficará com ícone até receber uma foto.",menu=True);return {"ok":True}
+ if uid in PLAYER_EDIT_STATE:
+  state=PLAYER_EDIT_STATE[uid];value=raw_text.strip()
+  if state.get("action")=="lookup" and value and not value.startswith("/"):
+   with SessionLocal() as s:
+    p=s.query(Player).filter(Player.name.ilike(value),Player.active.is_(True)).first()
+    if not p:send(chat,"Não encontrei esse jogador. Digite o nome novamente ou /cancelar.");return {"ok":True}
+    PLAYER_EDIT_STATE[uid]={"action":"selected","player_id":p.id};send(chat,f"Selecionado: {p.name}.\nDigite o novo nome para renomear; /foto para alterar foto; /excluir para retirar da equipe; /cancelar para sair.")
+   return {"ok":True}
+  if state.get("action")=="selected":
+   with SessionLocal() as s:
+    p=s.get(Player,state["player_id"])
+    if not p:PLAYER_EDIT_STATE.pop(uid,None);send(chat,"Jogador não encontrado.",menu=True);return {"ok":True}
+    if value=="/foto":PLAYER_EDIT_STATE[uid]={"action":"photo","player_id":p.id};send(chat,f"Envie a nova foto de {p.name}.")
+    elif value=="/excluir":PLAYER_EDIT_STATE[uid]={"action":"delete_confirm","player_id":p.id};send(chat,f"Para retirar {p.name} da equipe, digite EXCLUIR.")
+    elif value=="/cancelar":PLAYER_EDIT_STATE.pop(uid,None);send(chat,"Edição cancelada.",menu=True)
+    elif value and not value.startswith("/"):
+     old=p.name;p.name=value;log(s,"player.renamed",old+" -> "+value);s.commit();PLAYER_EDIT_STATE.pop(uid,None);send(chat,f"Jogador atualizado: {value}.",menu=True)
+   return {"ok":True}
+  if state.get("action")=="delete_confirm":
+   if value.upper()=="EXCLUIR":
+    with SessionLocal() as s:
+     p=s.get(Player,state["player_id"]);p.active=False;log(s,"player.deactivated",p.name);s.commit();name=p.name
+    PLAYER_EDIT_STATE.pop(uid,None);send(chat,f"{name} foi retirado da equipe. O histórico de estatísticas foi preservado.",menu=True)
+   else:send(chat,"Digite EXCLUIR para confirmar ou /cancelar.")
+   return {"ok":True}
+ if uid in COMPETITION_ADD_STATE and raw_text and not raw_text.startswith("/"):
   with SessionLocal() as s:
-   exists=s.query(Player).filter(Player.name.ilike(name)).first()
-   if exists:
-    out=f"⚠️ {name} já está cadastrado."
-   else:
-    p=Player(name=name)
-    s.add(p);log(s,"player.created.telegram",name);s.commit()
-    out=f"✅ Jogador {name} cadastrado com sucesso!"
-  PLAYER_ADD_STATE.discard(uid)
-  send(chat,out,menu=True)
-  return {"ok":True}
+   comp=Competition(name=raw_text.strip(),kind="Competição");s.add(comp);log(s,"competition.created.telegram",comp.name);s.commit();name=comp.name
+  COMPETITION_ADD_STATE.discard(uid);send(chat,f"Competição {name} cadastrada!",menu=True);return {"ok":True}
+ if cmd=="/cancelar":
+  PLAYER_ADD_STATE.pop(uid,None);PLAYER_EDIT_STATE.pop(uid,None);COMPETITION_ADD_STATE.discard(uid);send(chat,"Operação cancelada.",menu=True);return {"ok":True}
  if cmd=="/addplayer":
-  PLAYER_ADD_STATE.add(uid)
-  send(chat,"➕ Adicionar jogador\nAgora envie o nome ou apelido do jogador.")
-  return {"ok":True}
+  PLAYER_ADD_STATE[uid]={"action":"name"};send(chat,"➕ Adicionar jogador\nEnvie o nome do jogador.");return {"ok":True}
+ if cmd=="/addcompetition":
+  COMPETITION_ADD_STATE.add(uid);send(chat,"🏅 Adicionar competição\nEnvie o nome da competição.");return {"ok":True}
+ if cmd=="/editplayer":
+  PLAYER_EDIT_STATE[uid]={"action":"lookup"};send(chat,"✏️ Editar jogador\nDigite o nome atual do jogador.");return {"ok":True}
+ if cmd=="/deleteplayer":
+  PLAYER_EDIT_STATE[uid]={"action":"lookup"};send(chat,"🗑️ Excluir jogador\nDigite o nome do jogador que deseja retirar da equipe.");return {"ok":True}
+ if cmd=="/competitions":
+  with SessionLocal() as s:
+   rows=s.query(Competition).order_by(Competition.name).all()
+   out="\n".join(f"• {x.name} ({x.kind})" for x in rows) or "Nenhuma competição cadastrada."
+  send(chat,out,menu=True);return {"ok":True}
  if cmd=="/addroster":
   added=[];skipped=[]
   with SessionLocal() as s:
