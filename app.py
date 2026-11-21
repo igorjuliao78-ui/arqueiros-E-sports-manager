@@ -154,15 +154,17 @@ def card(s:Session=Depends(get_db),_:bool=Depends(auth)):
 def send(chat,text,menu=False):
  payload={"chat_id":chat,"text":text}
  if menu:
-  payload["reply_markup"]={"keyboard":[[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"❔ Ajuda"},{"text":"🏹 Menu"}]],"resize_keyboard":True}
+  payload["reply_markup"]={"keyboard":[[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"➕ Adicionar jogador"},{"text":"📥 Cadastrar elenco"}],[{"text":"❔ Ajuda"},{"text":"🏹 Menu"}]],"resize_keyboard":True}
  if BOT:requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json=payload,timeout=15).raise_for_status()
+PLAYER_ADD_STATE=set()
+ROSTER=["Jesus「ΔΩŘ」","Carlos","CDS","SM7","Jackson","Rony","Julião","Wellinson","Guiih S.","Jefferson","Marinhoox","Diogo Lima","Miquéias","Eltom Pereira","Joab Junior","Ezequiel","Brunno Bass","Davi","Trinity","Adriel","Vitor","Pereira","Léo","Mateus","Gustavo"]
 @app.post("/telegram/webhook")
 async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]=Header(default=None)):
  if HOOK and not secrets.compare_digest(x_telegram_bot_api_secret_token or "",HOOK):raise HTTPException(403,"Webhook inválido")
  update=await request.json();msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));parts=msg.get("text","").strip().split()
  if not chat:return {"ok":True}
  cmd=parts[0].split("@")[0].lower() if parts else ""
- cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","❔ Ajuda":"/help","🏹 Menu":"/menu"}.get(cmd,cmd)
+ cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","📥 Cadastrar elenco":"/addroster","❔ Ajuda":"/help","🏹 Menu":"/menu"}.get(cmd,cmd)
  # /id e /start são públicos para facilitar a configuração inicial; os demais comandos exigem autorização.
  if cmd=="/id":
   send(chat,f"Seu ID do Telegram é: {uid}\nEnvie esse número ao administrador para liberar o acesso.")
@@ -175,6 +177,41 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
   return {"ok":True}
  if uid not in ADMINS:
   send(chat,"Acesso restrito. Use /id e peça ao administrador para liberar seu usuário.")
+  return {"ok":True}
+ if uid in PLAYER_ADD_STATE and not cmd.startswith("/"):
+  name=msg.get("text","").strip()
+  if not name:
+   send(chat,"Envie o nome ou apelido do jogador.")
+   return {"ok":True}
+  with SessionLocal() as s:
+   exists=s.query(Player).filter(Player.name.ilike(name)).first()
+   if exists:
+    out=f"⚠️ {name} já está cadastrado."
+   else:
+    p=Player(name=name)
+    s.add(p);log(s,"player.created.telegram",name);s.commit()
+    out=f"✅ Jogador {name} cadastrado com sucesso!"
+  PLAYER_ADD_STATE.discard(uid)
+  send(chat,out,menu=True)
+  return {"ok":True}
+ if cmd=="/addplayer":
+  PLAYER_ADD_STATE.add(uid)
+  send(chat,"➕ Adicionar jogador\nAgora envie o nome ou apelido do jogador.")
+  return {"ok":True}
+ if cmd=="/addroster":
+  added=[];skipped=[]
+  with SessionLocal() as s:
+   existing={p.name.casefold() for p in s.query(Player).all()}
+   for name in ROSTER:
+    if name.casefold() in existing:
+     skipped.append(name)
+    else:
+     s.add(Player(name=name));added.append(name)
+   if added:
+    log(s,"roster.imported",", ".join(added));s.commit()
+  out=f"📥 Cadastro do elenco concluído!\nAdicionados: {len(added)}\nJá existentes: {len(skipped)}\nTotal na lista: {len(ROSTER)}"
+  if skipped:out+="\n\nJá estavam cadastrados: "+", ".join(skipped)
+  send(chat,out,menu=True)
   return {"ok":True}
  if cmd=="/menu":
   send(chat,"🏹 Menu principal. Escolha uma opção:",menu=True)
