@@ -168,9 +168,9 @@ ROSTER=["Jesus「ΔΩŘ」","Carlos","CDS","SM7","Jackson","Rony","Julião","Wel
 @app.post("/telegram/webhook")
 async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]=Header(default=None)):
  if HOOK and not secrets.compare_digest(x_telegram_bot_api_secret_token or "",HOOK):raise HTTPException(403,"Webhook inválido")
- update=await request.json();msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));parts=msg.get("text","").strip().split()
+ update=await request.json();msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));raw_text=msg.get("text","").strip();parts=raw_text.split()
  if not chat:return {"ok":True}
- cmd=parts[0].split("@")[0].lower() if parts else ""
+ cmd=raw_text.split("@")[0].lower() if raw_text.startswith("/") else raw_text
  cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","📥 Cadastrar elenco":"/addroster","❔ Ajuda":"/help","🏹 Menu":"/menu"}.get(cmd,cmd)
  # /id e /start são públicos para facilitar a configuração inicial; os demais comandos exigem autorização.
  if cmd=="/id":
