@@ -116,16 +116,17 @@ Sem `DATABASE_URL`, o projeto usa SQLite local. Em produção, use PostgreSQL pe
 
 ## Backup automático do banco
 
-O repositório inclui o workflow `.github/workflows/daily-database-backup.yml`, que gera um backup diário do PostgreSQL e guarda o arquivo como artefato do GitHub Actions por 30 dias.
+O repositório inclui o workflow `.github/workflows/daily-database-backup.yml`, que gera um backup diário do PostgreSQL, criptografa o arquivo com AES-256 e guarda o artefato criptografado no GitHub Actions por 30 dias.
 
 Para ativar:
 1. No GitHub, abra o repositório e entre em **Settings** > **Secrets and variables** > **Actions**.
 2. Clique em **New repository secret**.
 3. Nome: `DATABASE_URL`.
 4. Valor: use a **External Database URL** do PostgreSQL no Render (não a URL interna).
-5. Salve. O workflow também pode ser iniciado manualmente na aba **Actions**.
+5. Salve e crie outro secret chamado `BACKUP_ENCRYPTION_PASSPHRASE`, com uma senha longa e exclusiva. Guarde essa senha em local seguro: ela será necessária para descriptografar os backups.
+6. Salve. O workflow também pode ser iniciado manualmente na aba **Actions**.
 
-O arquivo fica em **Actions** > execução do backup > **Artifacts**. Faça testes periódicos de restauração; um backup só é útil se puder ser restaurado.
+O arquivo `.gpg` fica em **Actions** > execução do backup > **Artifacts**. Por segurança, o backup é armazenado criptografado. Para restaurar, baixe o artefato, descriptografe com a mesma senha e use `pg_restore`. Faça testes periódicos de restauração; um backup só é útil se puder ser restaurado.
 
 ## Comunicados no grupo Telegram
 
