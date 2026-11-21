@@ -347,7 +347,7 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
     elif value=="/excluir":PLAYER_EDIT_STATE[uid]={"action":"delete_confirm","player_id":p.id};send(chat,f"Para retirar {p.name} da equipe, digite EXCLUIR.")
     elif value=="/cancelar":PLAYER_EDIT_STATE.pop(uid,None);send(chat,"Edição cancelada.",menu=True)
     elif value and not value.startswith("/"):
-     old=p.name;p.name=value;log(s,"player.renamed",old+" -> "+value);s.commit();PLAYER_EDIT_STATE.pop(uid,None);send(chat,f"Jogador atualizado: {value}.",menu=True)
+     old=p.name;p.name=value;s.query(MatchPlayerStat).filter(MatchPlayerStat.player_name==old).update({MatchPlayerStat.player_name:value});log(s,"player.renamed",old+" -> "+value);s.commit();PLAYER_EDIT_STATE.pop(uid,None);send(chat,f"Jogador atualizado: {value}.",menu=True)
    return {"ok":True}
   if state.get("action")=="delete_confirm":
    if value.upper()=="EXCLUIR":
