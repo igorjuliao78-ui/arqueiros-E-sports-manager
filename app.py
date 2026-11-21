@@ -514,6 +514,12 @@ PLAYER_EDIT_STATE={}
 PLAYER_CARD_STATE=set()
 COMPETITION_ADD_STATE=set()
 COMPETITION_PICK_STATE={}
+PLAYER_BUTTONS={}
+PLAYER_DETAIL_STATE={}
+COMPETITION_BUTTONS={}
+COMPETITION_DETAIL_STATE={}
+COMPETITION_DELETE_BUTTONS={}
+COMPETITION_DELETE_STATE={}
 ROSTER=["Jesus「ΔΩŘ」","Carlos","CDS","SM7","Jackson","Rony","Julião","Wellinson","Guiih S.","Jefferson","Marinhoox","Diogo Lima","Miquéias","Eltom Pereira","Joab Junior","Ezequiel","Brunno Bass","Davi","Trinity","Adriel","Vitor","Pereira","Léo","Mateus","Gustavo"]
 @app.post("/telegram/webhook")
 async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]=Header(default=None)):
@@ -535,7 +541,7 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
  msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));raw_text=msg.get("text","").strip();parts=raw_text.split()
  if not chat:return {"ok":True}
  cmd=raw_text.split("@")[0].lower() if raw_text.startswith("/") else raw_text
- cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","🏅 Adicionar competição":"/addcompetition","✏️ Editar jogador":"/editplayer","🗑️ Excluir jogador":"/deleteplayer","📋 Competições":"/competitions","🪪 Card do jogador":"/playercard","✏️ Editar competição":"/competitions","🗑️ Excluir competição":"/competitions","🏆 Títulos":"/titles","🛡️ Card da equipe":"/teamcard","📚 Histórico":"/history","📈 Estatísticas por competição":"/competitionstats","❔ Ajuda":"/help","🏹 Menu":"/menu","🏹 MENU":"/menu","⬅️ Fechar menu":"/closemenu","📷 Alterar foto":"/foto","🗑️ Retirar da equipe":"/excluir","⏭️ Pular foto":"/pular","❌ Cancelar":"/cancelar","✅ Confirmar exclusão":"EXCLUIR"}.get(cmd,cmd)
+ cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","🏅 Adicionar competição":"/addcompetition","✏️ Editar jogador":"/editplayer","🗑️ Excluir jogador":"/deleteplayer","📋 Competições":"/competitions","🪪 Card do jogador":"/playercard","✏️ Editar competição":"/editcompetition","🗑️ Excluir competição":"/deletecompetition","🏆 Títulos":"/titles","🛡️ Card da equipe":"/teamcard","📚 Histórico":"/history","📈 Estatísticas por competição":"/competitionstats","❔ Ajuda":"/help","🏹 Menu":"/menu","🏹 MENU":"/menu","⬅️ Fechar menu":"/closemenu","📷 Alterar foto":"/foto","🗑️ Retirar da equipe":"/excluir","⏭️ Pular foto":"/pular","❌ Cancelar":"/cancelar","✅ Confirmar exclusão":"EXCLUIR"}.get(cmd,cmd)
  # /id e /start são públicos para facilitar a configuração inicial; os demais comandos exigem autorização.
  if cmd=="/id":
   send(chat,f"Seu ID do Telegram é: {uid}\nEnvie esse número ao administrador para liberar o acesso.")
@@ -559,6 +565,66 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
     else:out="Jogador não encontrado."
    PLAYER_ADD_STATE.pop(uid,None);PLAYER_EDIT_STATE.pop(uid,None);send(chat,out,menu=True);return {"ok":True}
   process_duel_photo(chat,msg["photo"][-1]["file_id"]);return {"ok":True}
+ # O botão MENU sempre tem prioridade e limpa qualquer fluxo em andamento.
+ if cmd=="/menu":
+  PLAYER_ADD_STATE.pop(uid,None);PLAYER_EDIT_STATE.pop(uid,None);PLAYER_CARD_STATE.discard(uid)
+  COMPETITION_ADD_STATE.discard(uid);COMPETITION_PICK_STATE.pop(str(chat),None)
+  PLAYER_DETAIL_STATE.pop(uid,None);COMPETITION_DETAIL_STATE.pop(uid,None)
+  COMPETITION_DELETE_STATE.pop(uid,None);PLAYER_BUTTONS.pop(uid,None);COMPETITION_BUTTONS.pop(uid,None);COMPETITION_DELETE_BUTTONS.pop(uid,None)
+  send(chat,"🏹 Menu principal. Operação anterior cancelada.",menu=True);return {"ok":True}
+ if cmd=="/cancelar":
+  PLAYER_ADD_STATE.pop(uid,None);PLAYER_EDIT_STATE.pop(uid,None);PLAYER_CARD_STATE.discard(uid)
+  COMPETITION_ADD_STATE.discard(uid);COMPETITION_PICK_STATE.pop(str(chat),None)
+  PLAYER_DETAIL_STATE.pop(uid,None);COMPETITION_DETAIL_STATE.pop(uid,None);COMPETITION_DELETE_STATE.pop(uid,None)
+  PLAYER_BUTTONS.pop(uid,None);COMPETITION_BUTTONS.pop(uid,None);COMPETITION_DELETE_BUTTONS.pop(uid,None)
+  send(chat,"Operação cancelada.",menu=True);return {"ok":True}
+ if raw_text in PLAYER_BUTTONS.get(uid,{}):
+  PLAYER_DETAIL_STATE[uid]=PLAYER_BUTTONS[uid][raw_text];PLAYER_BUTTONS.pop(uid,None)
+  raw_text="__PLAYER_SELECTED__"
+ if raw_text=="__PLAYER_SELECTED__":
+  with SessionLocal() as s:
+   p=s.get(Player,PLAYER_DETAIL_STATE[uid])
+   if not p:send(chat,"Jogador não encontrado.",menu=True);return {"ok":True}
+   m=player_metrics(s,p);titles=s.query(Title).filter(Title.player_id==p.id).order_by(Title.won_at.desc()).all()
+   out=f"👤 {p.name}\\nJOGOS: {m['games']}\\nVITÓRIAS: {m['wins']}\\nEMPATES: {m['draws']}\\nDERROTAS: {m['losses']}\\nGOLS MARCADOS: {m['goals']}\\nGOLS SOFRIDOS: {m['conceded']}\\nSALDO: {m['goal_difference']}\\nAPROVEITAMENTO: {m['win_rate']}%\\nTÍTULOS: "+(", ".join(t.name for t in titles) if titles else "Nenhum")
+  send(chat,out,menu=True,keyboard=[[{"text":"🪪 Gerar card deste jogador"}],[{"text":"⬅️ Voltar aos jogadores"},{"text":"🏹 MENU"}]])
+  return {"ok":True}
+ if raw_text=="🪪 Gerar card deste jogador" and uid in PLAYER_DETAIL_STATE:
+  with SessionLocal() as s:
+   p=s.get(Player,PLAYER_DETAIL_STATE[uid]);buf=weekly_player_image(p,player_metrics(s,p));name=p.name
+  requests.post("https://api.telegram.org/bot"+BOT+"/sendPhoto",data={"chat_id":chat,"caption":"🏹 Card individual — "+name},files={"photo":("player-card.png",buf.getvalue(),"image/png")},timeout=30).raise_for_status()
+  send(chat,"Card de "+name+" enviado.",menu=True);return {"ok":True}
+ if raw_text=="⬅️ Voltar aos jogadores":PLAYER_DETAIL_STATE.pop(uid,None);cmd="/jogadores"
+ if raw_text in COMPETITION_BUTTONS.get(uid,{}):
+  COMPETITION_DETAIL_STATE[uid]=COMPETITION_BUTTONS[uid][raw_text];COMPETITION_BUTTONS.pop(uid,None);raw_text="__COMPETITION_SELECTED__"
+ if raw_text=="__COMPETITION_SELECTED__":
+  with SessionLocal() as s:
+   comp=s.get(Competition,COMPETITION_DETAIL_STATE[uid])
+   if not comp:send(chat,"Competição não encontrada.",menu=True);return {"ok":True}
+   matches=s.query(Match).filter(Match.competition_id==comp.id).order_by(Match.id.desc()).all()
+   approved=[m for m in matches if m.status=="Aprovado"]
+   wins=sum(1 for m in approved if m.home=="ARQUEIROS E-SPORTS" and (m.home_score or 0)>(m.away_score or 0))
+   draws=sum(1 for m in approved if m.home=="ARQUEIROS E-SPORTS" and (m.home_score or 0)==(m.away_score or 0))
+   losses=sum(1 for m in approved if m.home=="ARQUEIROS E-SPORTS" and (m.home_score or 0)<(m.away_score or 0))
+   out=f"🏆 {comp.name}\\nTipo: {comp.kind}\\nTemporada: {comp.season or 'Não informada'}\\nConfrontos: {len(matches)}\\nAprovados: {len(approved)}\\nVitórias: {wins} | Empates: {draws} | Derrotas: {losses}\\n\\n"+("\\n".join(f"#{m.id} {m.home} {m.home_score if m.home_score is not None else '?'} x {m.away_score if m.away_score is not None else '?'} {m.away} — {m.status}" for m in matches[:12]) or "Sem confrontos registrados.")
+  send(chat,out,menu=True,keyboard=[[{"text":"⬅️ Voltar às competições"},{"text":"🏹 MENU"}]])
+  return {"ok":True}
+ if raw_text=="⬅️ Voltar às competições":COMPETITION_DETAIL_STATE.pop(uid,None);cmd="/competitions"
+ if raw_text in COMPETITION_DELETE_BUTTONS.get(uid,{}):
+  cid=COMPETITION_DELETE_BUTTONS[uid][raw_text];COMPETITION_DELETE_BUTTONS.pop(uid,None)
+  COMPETITION_DELETE_STATE[uid]=cid
+  send(chat,"Confirma excluir "+raw_text+"? Os confrontos e títulos serão preservados, mas ficarão sem vínculo com essa competição.",menu=True,keyboard=[[{"text":"✅ Confirmar exclusão da competição"}],[{"text":"❌ Cancelar"},{"text":"🏹 MENU"}]])
+  return {"ok":True}
+ if raw_text=="✅ Confirmar exclusão da competição" and uid in COMPETITION_DELETE_STATE:
+  cid=COMPETITION_DELETE_STATE.pop(uid)
+  with SessionLocal() as s:
+   comp=s.get(Competition,cid)
+   if comp:
+    s.query(Match).filter(Match.competition_id==cid).update({Match.competition_id:None})
+    s.query(Title).filter(Title.competition_id==cid).update({Title.competition_id:None})
+    name=comp.name;log(s,"competition.deleted.telegram",name);s.delete(comp);s.commit()
+   else:name=None
+  send(chat,("Competição "+name+" excluída. Histórico preservado.") if name else "Competição não encontrada.",menu=True);return {"ok":True}
  if uid in PLAYER_ADD_STATE:
   state=PLAYER_ADD_STATE[uid];value=raw_text.strip()
   if state.get("action")=="name" and value and not value.startswith("/"):
@@ -670,6 +736,24 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
    rows=s.query(Title).order_by(Title.won_at.desc()).all()
    out="\n".join("🏆 "+t.name+" ("+(t.season or "sem temporada")+")"+(" — Individual" if t.player_id else " — Equipe") for t in rows) or "Nenhum título registrado."
   send(chat,out,menu=True);return {"ok":True}
+ if cmd=="/competitions":
+  with SessionLocal() as s: rows=s.query(Competition).order_by(Competition.name).all()
+  if not rows:send(chat,"Nenhuma competição cadastrada.",menu=True);return {"ok":True}
+  COMPETITION_BUTTONS[uid]={x.name:x.id for x in rows}
+  keyboard=[[{"text":x.name}] for x in rows]+[[{"text":"🏹 MENU"}]]
+  send(chat,"📋 Escolha uma competição para ver seus dados:",menu=True,keyboard=keyboard);return {"ok":True}
+ if cmd=="/deletecompetition":
+  with SessionLocal() as s: rows=s.query(Competition).order_by(Competition.name).all()
+  if not rows:send(chat,"Não há competições cadastradas para excluir.",menu=True);return {"ok":True}
+  COMPETITION_DELETE_BUTTONS[uid]={x.name:x.id for x in rows}
+  keyboard=[[{"text":x.name}] for x in rows]+[[{"text":"❌ Cancelar"},{"text":"🏹 MENU"}]]
+  send(chat,"🗑️ Selecione a competição que deseja excluir:",menu=True,keyboard=keyboard);return {"ok":True}
+ if cmd=="/jogadores":
+  with SessionLocal() as s: rows=s.query(Player).filter(Player.active.is_(True)).order_by(Player.name).all()
+  if not rows:send(chat,"Nenhum jogador ativo cadastrado.",menu=True);return {"ok":True}
+  PLAYER_BUTTONS[uid]={x.name:x.id for x in rows}
+  keyboard=[[{"text":x.name}] for x in rows]+[[{"text":"🏹 MENU"}]]
+  send(chat,"👥 Escolha um jogador para consultar as estatísticas:",menu=True,keyboard=keyboard);return {"ok":True}
  if cmd=="/competitions":
   with SessionLocal() as s:
    rows=s.query(Competition).order_by(Competition.name).all()
