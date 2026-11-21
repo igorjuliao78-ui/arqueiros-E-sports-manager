@@ -203,10 +203,11 @@ def delete_title(tid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
  if not t:raise HTTPException(404,"Título não encontrado")
  log(s,"title.deleted",t.name);s.delete(t);s.commit();return {"ok":True}
 @app.get("/api/players/{pid}/stats")
-def player_stats(pid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
+def player_stats(pid:int,competition_id:Optional[int]=None,s:Session=Depends(get_db),_:bool=Depends(auth)):
  p=s.get(Player,pid)
  if not p:raise HTTPException(404,"Jogador não encontrado")
- return {"player":p.name,"stats":player_metrics(s,p)}
+ if competition_id and not s.get(Competition,competition_id):raise HTTPException(404,"Competição não encontrada")
+ return {"player":p.name,"stats":player_metrics(s,p,competition_id),"competition_id":competition_id}
 @app.get("/api/matches/{mid}/stats")
 def get_match_stats(mid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
  m=s.get(Match,mid)
@@ -320,8 +321,10 @@ def card_image(title,lines):
  y=.68;step=.62/max(len(lines),1)
  for line in lines:ax.text(.06,y,str(line),transform=ax.transAxes,color="white",fontsize=11,va="top",wrap=True);y-=step
  fig.tight_layout(pad=1.5);buf=io.BytesIO();fig.savefig(buf,format="png",dpi=150,facecolor=fig.get_facecolor());plt.close(fig);buf.seek(0);return buf
-def player_metrics(s,p):
- games=s.query(MatchPlayerStat).join(Match,Match.id==MatchPlayerStat.match_id).filter(MatchPlayerStat.player_name==p.name,Match.status=="Aprovado").all()
+def player_metrics(s,p,competition_id=None):
+ query=s.query(MatchPlayerStat).join(Match,Match.id==MatchPlayerStat.match_id).filter(MatchPlayerStat.player_name==p.name,Match.status=="Aprovado")
+ if competition_id:query=query.filter(Match.competition_id==competition_id)
+ games=query.all()
  played=[g for g in games if g.goals_for is not None and g.goals_against is not None]
  wins=sum(g.goals_for>g.goals_against for g in played);draws=sum(g.goals_for==g.goals_against for g in played);losses=len(played)-wins-draws
  return {"games":len(played),"wins":wins,"draws":draws,"losses":losses,"goals":sum(g.goals_for or 0 for g in played),"conceded":sum(g.goals_against or 0 for g in played),"goal_difference":sum((g.goals_for or 0)-(g.goals_against or 0) for g in played),"win_rate":round(wins/len(played)*100,1) if played else 0}
