@@ -229,11 +229,11 @@ def weekly_cards(x_weekly_token:Optional[str]=Header(default=None)):
    sent+=1
  return {"ok":True,"players":len(cards),"cards_sent":sent}
 
-def send(chat,text,menu=False):
+def send(chat,text,menu=False,keyboard=None):
  if not BOT:return
  buf=card_image("ARQUEIROS E-SPORTS",str(text).splitlines() or [" "])
  requests.post("https://api.telegram.org/bot"+BOT+"/sendPhoto",data={"chat_id":chat,"caption":"🏹 "+str(text)[:900]},files={"photo":("arqueiros.png",buf.getvalue(),"image/png")},timeout=30).raise_for_status()
- keyboard=[[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"➕ Adicionar jogador"},{"text":"🏅 Adicionar competição"}],[{"text":"✏️ Editar jogador"},{"text":"🗑️ Excluir jogador"}],[{"text":"📋 Competições"},{"text":"❔ Ajuda"}],[{"text":"⬅️ Fechar menu"}]] if menu else [[{"text":"🏹 MENU"}]]
+ keyboard=keyboard or ([[{"text":"📊 Estatísticas"},{"text":"👥 Jogadores"}],[{"text":"⏳ Pendentes"},{"text":"🏆 Ranking"}],[{"text":"➕ Adicionar jogador"},{"text":"🏅 Adicionar competição"}],[{"text":"✏️ Editar jogador"},{"text":"🗑️ Excluir jogador"}],[{"text":"📋 Competições"},{"text":"❔ Ajuda"}],[{"text":"⬅️ Fechar menu"}]] if menu else [[{"text":"🏹 MENU"}]])
  payload={"chat_id":chat,"text":"🏹 Menu aberto. Escolha uma opção:" if menu else "🏹 Toque em MENU para abrir as opções.","reply_markup":{"keyboard":keyboard,"resize_keyboard":True,"is_persistent":True}}
  requests.post("https://api.telegram.org/bot"+BOT+"/sendMessage",json=payload,timeout=15).raise_for_status()
 def normalize_name(value):
@@ -295,7 +295,7 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
  msg=update.get("message",{});user=msg.get("from",{});chat=msg.get("chat",{}).get("id");uid=str(user.get("id",""));raw_text=msg.get("text","").strip();parts=raw_text.split()
  if not chat:return {"ok":True}
  cmd=raw_text.split("@")[0].lower() if raw_text.startswith("/") else raw_text
- cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","🏅 Adicionar competição":"/addcompetition","✏️ Editar jogador":"/editplayer","🗑️ Excluir jogador":"/deleteplayer","📋 Competições":"/competitions","❔ Ajuda":"/help","🏹 Menu":"/menu","🏹 MENU":"/menu","⬅️ Fechar menu":"/closemenu"}.get(cmd,cmd)
+ cmd={"📊 Estatísticas":"/stats","👥 Jogadores":"/jogadores","⏳ Pendentes":"/pendentes","🏆 Ranking":"/ranking","➕ Adicionar jogador":"/addplayer","🏅 Adicionar competição":"/addcompetition","✏️ Editar jogador":"/editplayer","🗑️ Excluir jogador":"/deleteplayer","📋 Competições":"/competitions","❔ Ajuda":"/help","🏹 Menu":"/menu","🏹 MENU":"/menu","⬅️ Fechar menu":"/closemenu","📷 Alterar foto":"/foto","🗑️ Retirar da equipe":"/excluir","⏭️ Pular foto":"/pular","❌ Cancelar":"/cancelar","✅ Confirmar exclusão":"EXCLUIR"}.get(cmd,cmd)
  # /id e /start são públicos para facilitar a configuração inicial; os demais comandos exigem autorização.
  if cmd=="/id":
   send(chat,f"Seu ID do Telegram é: {uid}\nEnvie esse número ao administrador para liberar o acesso.")
@@ -337,14 +337,14 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
    with SessionLocal() as s:
     p=s.query(Player).filter(Player.name.ilike(value),Player.active.is_(True)).first()
     if not p:send(chat,"Não encontrei esse jogador. Digite o nome novamente ou /cancelar.");return {"ok":True}
-    PLAYER_EDIT_STATE[uid]={"action":"selected","player_id":p.id};send(chat,f"Selecionado: {p.name}.\nDigite o novo nome para renomear; /foto para alterar foto; /excluir para retirar da equipe; /cancelar para sair.")
+    PLAYER_EDIT_STATE[uid]={"action":"selected","player_id":p.id};send(chat,f"Selecionado: {p.name}. Escolha uma opção ou digite o novo nome:",menu=True,keyboard=[[{"text":"📷 Alterar foto"},{"text":"🗑️ Retirar da equipe"}],[{"text":"❌ Cancelar"}]])
    return {"ok":True}
   if state.get("action")=="selected":
    with SessionLocal() as s:
     p=s.get(Player,state["player_id"])
     if not p:PLAYER_EDIT_STATE.pop(uid,None);send(chat,"Jogador não encontrado.",menu=True);return {"ok":True}
     if value=="/foto":PLAYER_EDIT_STATE[uid]={"action":"photo","player_id":p.id};send(chat,f"Envie a nova foto de {p.name}.")
-    elif value=="/excluir":PLAYER_EDIT_STATE[uid]={"action":"delete_confirm","player_id":p.id};send(chat,f"Para retirar {p.name} da equipe, digite EXCLUIR.")
+    elif value=="/excluir":PLAYER_EDIT_STATE[uid]={"action":"delete_confirm","player_id":p.id};send(chat,f"Confirme a retirada de {p.name}:",menu=True,keyboard=[[{"text":"✅ Confirmar exclusão"}],[{"text":"❌ Cancelar"}]])
     elif value=="/cancelar":PLAYER_EDIT_STATE.pop(uid,None);send(chat,"Edição cancelada.",menu=True)
     elif value and not value.startswith("/"):
      old=p.name;p.name=value;s.query(MatchPlayerStat).filter(MatchPlayerStat.player_name==old).update({MatchPlayerStat.player_name:value});log(s,"player.renamed",old+" -> "+value);s.commit();PLAYER_EDIT_STATE.pop(uid,None);send(chat,f"Jogador atualizado: {value}.",menu=True)
