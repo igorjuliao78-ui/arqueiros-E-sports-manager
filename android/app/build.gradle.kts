@@ -1,3 +1,10 @@
+import java.awt.Color
+import java.awt.image.BufferedImage
+import java.io.ByteArrayInputStream
+import java.io.File
+import java.util.Base64
+import javax.imageio.ImageIO
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -32,28 +39,28 @@ dependencies {
 
  
 // Gera os ícones do launcher diretamente do recorte da logo oficial incluído em assets.
+val launcherIconSizes = mapOf("mdpi" to 48, "hdpi" to 72, "xhdpi" to 96, "xxhdpi" to 144, "xxxhdpi" to 192)
 val generateArqueirosLauncherIcons by tasks.registering {
     val logoFile = file("src/main/assets/arqueiros-logo.jpg.b64")
     inputs.file(logoFile)
-    outputs.dir(file("src/main/res"))
+    outputs.files(launcherIconSizes.keys.map { file("src/main/res/mipmap-" + it + "/ic_launcher.png") })
     doLast {
         val encoded = logoFile.readText().trim()
-        val bytes = java.util.Base64.getDecoder().decode(encoded)
-        val source = javax.imageio.ImageIO.read(java.io.ByteArrayInputStream(bytes))
-        val sizes = mapOf("mdpi" to 48, "hdpi" to 72, "xhdpi" to 96, "xxhdpi" to 144, "xxxhdpi" to 192)
-        sizes.forEach { (density, size) ->
+        val bytes = Base64.getDecoder().decode(encoded)
+        val source = javax.imageio.ImageIO.read(ByteArrayInputStream(bytes))
+        launcherIconSizes.forEach { (density, size) ->
             val directory = file("src/main/res/mipmap-" + density)
             directory.mkdirs()
-            val canvas = java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+            val canvas = BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB)
             val graphics = canvas.createGraphics()
-            graphics.color = java.awt.Color(11, 11, 16)
+            graphics.color = Color(11, 11, 16)
             graphics.fillRect(0, 0, size, size)
             val scale = minOf((size * 0.90) / source.width, (size * 0.64) / source.height)
             val width = (source.width * scale).toInt()
             val height = (source.height * scale).toInt()
             graphics.drawImage(source, (size - width) / 2, (size - height) / 2, width, height, null)
             graphics.dispose()
-            javax.imageio.ImageIO.write(canvas, "png", file(directory, "ic_launcher.png"))
+            ImageIO.write(canvas, "png", File(directory, "ic_launcher.png"))
         }
     }
 }
