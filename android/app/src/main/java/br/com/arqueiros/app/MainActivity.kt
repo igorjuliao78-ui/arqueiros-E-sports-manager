@@ -501,6 +501,16 @@ private fun PerformanceTab(data: JSONObject, admin: Boolean, onAdd: (String) -> 
     LazyColumn(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
         item { SectionTitle("DESEMPENHO DOS JOGADORES") }
         item {
+            val team = data.optJSONObject("team_player_performance") ?: JSONObject()
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("RESUMO COLETIVO • PARTICIPAÇÕES INDIVIDUAIS", color = Gold, fontWeight = FontWeight.Black)
+                    Text("${team.optInt("games")} jogos registrados • ${team.optInt("wins")}V ${team.optInt("draws")}E ${team.optInt("losses")}D", color = Color.White)
+                    Text("${team.optInt("goals")} gols • ${team.optInt("assists")} assistências • ${team.optInt("points")} pontos", color = Muted)
+                }
+            }
+        }
+        item {
             if (mvp != null) Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
                 Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text("👑 MVP DO MÊS", color = Gold, fontWeight = FontWeight.Black)
