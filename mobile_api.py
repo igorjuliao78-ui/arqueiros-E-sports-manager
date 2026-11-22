@@ -598,11 +598,11 @@ def _parse_mobile_print_rows(text: str, team_side: str):
     rows = []
     pending_players = []
     for line in text.splitlines():
-        line = re.sub(r"\\s+", " ", line).strip(" \\t•")
-        line = re.sub(r"^\\d+\\s*(?:[º°])?\\s*[.)➤>»:-]\\s*", "", line)
+        line = re.sub(r"\s+", " ", line).strip(" \t•")
+        line = re.sub(r"^\d+\s*(?:[º°])?\s*[.)➤>»:-]\s*", "", line)
 
         # Official WhatsApp description format: PLAYER | 2 x 1
-        scored = re.match(r"^(.+?)\\s*\\|\\s*(\\d+)\\s*[x×]\\s*(\\d+)\\s*$", line, re.I)
+        scored = re.match(r"^(.+?)\s*\|\s*(\d+)\s*[x×]\s*(\d+)\s*$", line, re.I)
         if scored:
             player_name = scored.group(1).strip(" •➤».-:")
             if player_name:
@@ -612,7 +612,7 @@ def _parse_mobile_print_rows(text: str, team_side: str):
             continue
 
         # Pending players are visible in the review but never enter statistics.
-        pending = re.match(r"^(.+?)\\s*\\|\\s*(?:PENDENTE|AGUARDANDO|NÃO\\s+INFORMADO)\\s*$", line, re.I)
+        pending = re.match(r"^(.+?)\s*\|\s*(?:PENDENTE|AGUARDANDO|NÃO\s+INFORMADO)\s*$", line, re.I)
         if pending:
             player_name = pending.group(1).strip(" •➤».-:")
             if player_name:
@@ -620,7 +620,7 @@ def _parse_mobile_print_rows(text: str, team_side: str):
             continue
 
         # Also accept a direct matchup line, where both player names are shown.
-        duel = re.match(r"^\\s*(?:\\d+\\s*(?:[º°])?\\s*[.)➤>»:-]?\\s*)?(.+?)\\s+(\\d+)\\s*[x×]\\s*(\\d+)(?:\\s+(.+))?$", line, re.I)
+        duel = re.match(r"^\s*(?:\d+\s*(?:[º°])?\s*[.)➤>»:-]?\s*)?(.+?)\s+(\d+)\s*[x×]\s*(\d+)(?:\s+(.+))?$", line, re.I)
         if not duel:
             continue
         left = duel.group(1).strip(" •➤».-:")
