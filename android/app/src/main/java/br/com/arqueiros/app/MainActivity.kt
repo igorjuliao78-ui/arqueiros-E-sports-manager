@@ -206,7 +206,7 @@ private fun MainScreen(data: JSONObject, user: JSONObject, token: String, busy: 
             "player" -> FormSpec("Novo jogador", listOf("name" to "Nome", "nickname" to "Nick", "position" to "Posição", "team" to "Equipe/divisão", "telegram_chat_id" to "ID Telegram opcional"), "api/mobile/players")
             "competition" -> FormSpec("Nova competição", listOf("name" to "Nome", "kind" to "Tipo: Liga/Copa/Torneio", "season" to "Temporada"), "api/mobile/competitions")
             "match" -> FormSpec("Registrar confronto", listOf("home" to "Equipe Arqueiros", "away" to "Adversário", "home_score" to "Gols Arqueiros", "away_score" to "Gols adversário", "competition_id" to "ID da competição opcional"), "api/mobile/matches")
-            "player_game" -> FormSpec("Lançar jogo de jogador", listOf("player_name" to "Nome do jogador (igual ao elenco)", "opponent" to "Adversário", "competition_id" to "ID da competição (opcional)", "goals_for" to "Placar do jogador", "goals_against" to "Placar adversário", "goals" to "Gols do jogador", "assists" to "Assistências", "evidence_url" to "Link do print/comprovação"), "api/mobile/player-games")
+            "player_game" -> FormSpec("Lançar jogo de jogador", listOf("player_id" to "Selecionar jogador", "opponent" to "Adversário", "competition_id" to "ID da competição (opcional)", "goals_for" to "Placar do jogador", "goals_against" to "Placar adversário", "goals" to "Gols do jogador", "assists" to "Assistências", "evidence_url" to "Link do print/comprovação"), "api/mobile/player-games")
             "federation" -> FormSpec("Atualizar confronto de federação", listOf("opponent" to "Equipe adversária", "round" to "Rodada", "format" to "Formato: 3x3, 5x5 ou 6x6", "competition_id" to "ID da competição (opcional)", "score_for" to "Placar Arqueiros", "score_against" to "Placar adversário", "lineup" to "Escalação (nomes separados por vírgula)", "evidence_url" to "Link do print/comprovação"), "api/mobile/federation")
             "title" -> FormSpec("Registrar título", listOf("name" to "Título", "season" to "Temporada", "competition_id" to "ID competição opcional", "player_id" to "ID jogador opcional", "notes" to "Observações"), "api/mobile/titles")
             "notice" -> FormSpec("Publicar comunicado", listOf("title" to "Título", "body" to "Mensagem"), "api/mobile/notices")
@@ -215,7 +215,7 @@ private fun MainScreen(data: JSONObject, user: JSONObject, token: String, busy: 
             "user" -> FormSpec("Criar acesso", listOf("username" to "Usuário", "password" to "Senha (mín. 8)", "role" to "member ou admin", "player_id" to "ID jogador opcional"), "api/mobile/users")
             else -> null
         }
-        if (spec != null) FormDialog(spec, onDismiss = { form = null }) { values ->
+        if (spec != null) FormDialog(spec, players = listOfJson(data.optJSONArray("players")), onDismiss = { form = null }) { values ->
             onAction(spec.path, "POST", bodyOf(values)); form = null
         } else form = null
     }
@@ -224,18 +224,47 @@ private fun MainScreen(data: JSONObject, user: JSONObject, token: String, busy: 
 private data class FormSpec(val title: String, val fields: List<Pair<String, String>>, val path: String)
 
 @Composable
-private fun FormDialog(spec: FormSpec, onDismiss: () -> Unit, onSave: (Map<String, String>) -> Unit) {
+private fun FormDialog(spec: FormSpec, players: List<JSONObject> = emptyList(), onDismiss: () -> Unit, onSave: (Map<String, String>) -> Unit) {
     val values = remember(spec) { mutableStateMapOf<String, String>().apply { spec.fields.forEach { put(it.first, "") } } }
+    var playerSearch by remember(spec) { mutableStateOf("") }
+    val selectedPlayer = players.firstOrNull { it.optInt("id").toString() == values["player_id"] }
+    val filteredPlayers = players.filter { p ->
+        p.optBoolean("active", true) && p.optString("name").contains(playerSearch, ignoreCase = true)
+    }
     AlertDialog(onDismissRequest = onDismiss, containerColor = Panel,
         title = { Text(spec.title, color = Color.White) },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        text = { Column(verticalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.heightIn(max = 470.dp)) {
             spec.fields.forEach { (key, label) ->
-                OutlinedTextField(values[key] ?: "", { values[key] = it }, label = { Text(label) },
-                    modifier = Modifier.fillMaxWidth(), singleLine = key != "body",
-                    visualTransformation = if (key == "password") PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None)
+                if (key == "player_id") {
+                    Text(label, color = Gold, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(playerSearch, { playerSearch = it }, label = { Text("Pesquisar jogador pelo nome") },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    if (selectedPlayer != null) {
+                        Text("Selecionado: ${selectedPlayer.optString("name")}", color = Gold, fontWeight = FontWeight.Bold)
+                    } else {
+                        Text("Toque no nome para selecionar:", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 190.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(filteredPlayers) { p ->
+                            val isSelected = values["player_id"] == p.optInt("id").toString()
+                            Button(onClick = {
+                                values["player_id"] = p.optInt("id").toString()
+                                playerSearch = p.optString("name")
+                            }, modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = if (isSelected) Red else Panel)) {
+                                Text((if (isSelected) "✓ " else "") + p.optString("name"), color = Color.White)
+                            }
+                        }
+                        if (filteredPlayers.isEmpty()) item { Text("Nenhum jogador encontrado.", color = Muted) }
+                    }
+                } else {
+                    OutlinedTextField(values[key] ?: "", { values[key] = it }, label = { Text(label) },
+                        modifier = Modifier.fillMaxWidth(), singleLine = key != "body",
+                        visualTransformation = if (key == "password") PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None)
+                }
             }
         } },
-        confirmButton = { TextButton(onClick = { onSave(values.toMap()) }) { Text("SALVAR", color = Gold) } },
+        confirmButton = { TextButton(onClick = { onSave(values.toMap()) }, enabled = spec.fields.none { it.first == "player_id" } || !values["player_id"].isNullOrBlank()) { Text("SALVAR", color = Gold) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("CANCELAR", color = Muted) } })
 }
 
@@ -471,6 +500,16 @@ private fun PerformanceTab(data: JSONObject, admin: Boolean, onAdd: (String) -> 
     val mvp = data.optJSONObject("mvp_month")
     LazyColumn(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
         item { SectionTitle("DESEMPENHO DOS JOGADORES") }
+        item {
+            val team = data.optJSONObject("team_player_performance") ?: JSONObject()
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("RESUMO COLETIVO • PARTICIPAÇÕES INDIVIDUAIS", color = Gold, fontWeight = FontWeight.Black)
+                    Text("${team.optInt("games")} jogos registrados • ${team.optInt("wins")}V ${team.optInt("draws")}E ${team.optInt("losses")}D", color = Color.White)
+                    Text("${team.optInt("goals")} gols • ${team.optInt("assists")} assistências • ${team.optInt("points")} pontos", color = Muted)
+                }
+            }
+        }
         item {
             if (mvp != null) Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
                 Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
