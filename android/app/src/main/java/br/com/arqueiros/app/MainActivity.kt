@@ -37,7 +37,7 @@ import java.net.URL
 private val Ink = Color(0xFF0B0B10)
 private val Panel = Color(0xFF191920)
 private val Red = Color(0xFFB51F2B)
-private val Gold = Color(0xFFD6B15E)
+private val Gold = Color(0xFFD6D6D6)
 private val Muted = Color(0xFFB8B8C2)
 
 class MainActivity : ComponentActivity() {
