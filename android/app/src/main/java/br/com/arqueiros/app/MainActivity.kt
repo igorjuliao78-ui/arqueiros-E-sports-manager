@@ -435,7 +435,7 @@ private fun CompetitionsTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit,
     LazyColumn(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
         item { Row(verticalAlignment = Alignment.CenterVertically) { SectionTitle("COMPETIÇÕES"); Spacer(Modifier.weight(1f)); if (admin) Button(onClick = onAdd, colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("+ COMPETIÇÃO") } } }
         items(listOfJson(data.optJSONArray("competitions"))) { c ->
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp),
+            Card(modifier = Modifier.fillMaxWidth().clickable { if (admin) onRegisterGame(c.optInt("id")) }, shape = RoundedCornerShape(15.dp),
                 colors = CardDefaults.cardColors(containerColor = Panel)) {
                 Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(c.optString("name"), color = Color.White, fontWeight = FontWeight.Bold)
@@ -518,7 +518,7 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
                     if (competitions.isNotEmpty()) {
                         Box {
                             OutlinedButton(onClick = { competitionMenu = true }) {
-                                Text(selectedComp?.optString("name") ?: "Vincular competição (opcional)")
+                                Text(selectedComp?.optString("name") ?: "Vincular competição obrigatória")
                             }
                             DropdownMenu(expanded = competitionMenu, onDismissRequest = { competitionMenu = false }) {
                                 competitions.forEach { comp ->
