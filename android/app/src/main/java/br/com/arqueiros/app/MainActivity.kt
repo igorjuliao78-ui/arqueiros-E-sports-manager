@@ -239,6 +239,21 @@ private fun FormDialog(spec: FormSpec, onDismiss: () -> Unit, onSave: (Map<Strin
 private fun HomeTab(data: JSONObject) {
     val d = data.optJSONObject("dashboard") ?: JSONObject()
     LazyColumn(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Panel)) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ArqueirosLogo(Modifier.size(76.dp))
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text("ARQUEIROS E-SPORTS", color = Gold, fontWeight = FontWeight.Black,
+                            style = MaterialTheme.typography.titleMedium)
+                        Text("CENTRAL DE GESTÃO DA EQUIPE", color = Muted,
+                            style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
         item { SectionTitle("PAINEL DA EQUIPE") }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatCard("Jogadores", d.optInt("players"), Modifier.weight(1f)); StatCard("Competições", d.optInt("competitions"), Modifier.weight(1f))
@@ -252,7 +267,18 @@ private fun HomeTab(data: JSONObject) {
                 r.optInt("J").toString() + "J  " + r.optInt("V") + "V  " + r.optInt("E") + "E  " + r.optInt("D") + "D  •  SG " + r.optInt("SG"))
         }
         item { SectionTitle("COMUNICADOS") }
-        items(listOfJson(data.optJSONArray("notices"))) { n -> InfoCard(n.optString("title"), n.optString("body")) }
+        items(listOfJson(data.optJSONArray("notices"))) { n ->
+            Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(13.dp)).padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(n.optString("title"), color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(n.optString("body"), color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+                if (admin) TextButton(onClick = {
+                    onAction("api/mobile/notices/${n.optInt("id")}", "DELETE", null)
+                }) { Text("EXCLUIR", color = Color(0xFFFF8B8B)) }
+            }
+        }
     }
 }
 
@@ -346,7 +372,21 @@ private fun nextStatus(s: String) = when (s) { "Ativo" -> "Reserva"; "Reserva" -
 private fun CompetitionsTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit, onAction: (String, String, JSONObject?) -> Unit) {
     LazyColumn(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
         item { Row(verticalAlignment = Alignment.CenterVertically) { SectionTitle("COMPETIÇÕES"); Spacer(Modifier.weight(1f)); if (admin) Button(onClick = onAdd, colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("+ COMPETIÇÃO") } } }
-        items(listOfJson(data.optJSONArray("competitions"))) { c -> InfoCard(c.optString("name"), c.optString("kind") + " • " + c.optString("season")) }
+        items(listOfJson(data.optJSONArray("competitions"))) { c ->
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp),
+                colors = CardDefaults.cardColors(containerColor = Panel)) {
+                Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(c.optString("name"), color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(c.optString("kind") + " • " + c.optString("season"), color = Muted,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (admin) TextButton(onClick = {
+                        onAction("api/mobile/competitions/${c.optInt("id")}", "DELETE", null)
+                    }) { Text("EXCLUIR", color = Color(0xFFFF8B8B)) }
+                }
+            }
+        }
     }
 }
 
@@ -387,7 +427,21 @@ private fun MoreTab(data: JSONObject, admin: Boolean, onAdd: (String) -> Unit,
             item { SectionTitle("RECRUTAMENTO") }
             items(listOfJson(data.optJSONArray("recruitment"))) { x -> InfoCard(x.optString("nickname"), x.optString("position") + " • " + x.optString("contact") + " • " + x.optString("status")) }
             item { SectionTitle("USUÁRIOS DO APP") }
-            items(listOfJson(data.optJSONArray("users"))) { x -> InfoCard(x.optString("username"), x.optString("role") + " • " + if (x.optBoolean("active")) "Ativo" else "Bloqueado") }
+            items(listOfJson(data.optJSONArray("users"))) { x ->
+                Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(13.dp)).padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(x.optString("username"), color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(x.optString("role") + " • " + if (x.optBoolean("active")) "Ativo" else "Bloqueado",
+                            color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = {
+                        onAction("api/mobile/users/${x.optInt("id")}/active", "PUT",
+                            JSONObject().put("active", !x.optBoolean("active")))
+                    }) { Text(if (x.optBoolean("active")) "BLOQUEAR" else "ATIVAR",
+                        color = if (x.optBoolean("active")) Color(0xFFFF8B8B) else Gold) }
+                }
+            }
         }
     }
 }
