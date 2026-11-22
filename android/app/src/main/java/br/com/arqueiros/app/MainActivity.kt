@@ -613,6 +613,10 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
                                     onValueChange = { value ->
                                         p.put("detected_name", value)
                                         p.put("player", value)
+                                        if (value.trim() != p.optString("player").trim()) {
+                                            p.put("player_id", JSONObject.NULL)
+                                            p.put("is_new_player", true)
+                                        }
                                         previewRevision++
                                     },
                                     label = { Text(if (p.optBoolean("is_new_player")) "Novo jogador — confirme o nome" else "Jogador") },
