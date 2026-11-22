@@ -53,6 +53,7 @@ No serviço do Render, abra **Environment** (ou **Environment Variables**) e adi
 | `DATABASE_URL` | URL de conexão PostgreSQL, se você criou um banco PostgreSQL. |
 | `TEAM_CHAT_ID` | (Opcional) ID do grupo Telegram da equipe para receber comunicados publicados no painel. |
 | `WEEKLY_REPORT_TOKEN` | Segredo exclusivo usado pelo workflow semanal de cards. Deve ser igual no Render e no GitHub Actions. |
+| `MOBILE_AUTH_SECRET` | Segredo aleatório longo para assinar as sessões do aplicativo Android. Se omitido, o backend usa `ADMIN_PANEL_TOKEN`. |
 
 Para produção, recomendamos criar um PostgreSQL no Render e colocar em `DATABASE_URL` a **Internal Database URL** do banco, se o banco e o serviço estiverem na mesma região. Não publique essa URL.
 

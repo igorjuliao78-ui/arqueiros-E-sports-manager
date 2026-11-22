@@ -19,3 +19,5 @@ services:
         sync: false
       - key: WEEKLY_REPORT_TOKEN
         sync: false
+      - key: MOBILE_AUTH_SECRET
+        sync: false
