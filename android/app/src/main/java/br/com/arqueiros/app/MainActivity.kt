@@ -570,6 +570,7 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
     preview?.let { result ->
         val scoreArray = result.optJSONArray("scores") ?: JSONArray()
         val playerRows = listOfJson(result.optJSONArray("stats"))
+        var previewRevision by remember(result) { mutableIntStateOf(0) }
         val selectedComp = competitions.firstOrNull { it.optInt("id").toString() == competitionId }
         AlertDialog(onDismissRequest = { preview = null }, containerColor = Panel,
             title = { Text("CONFERIR LEITURA DO PRINT", color = Gold) },
@@ -578,10 +579,37 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
                     Text("Adversário: ${result.optString("team")}", color = Color.White, fontWeight = FontWeight.Bold)
                     Text("Placar dos clãs: ${if (scoreArray.length() > 0) scoreArray.opt(0) else "?"} × ${if (scoreArray.length() > 1) scoreArray.opt(1) else "?"}", color = Color.White)
                     Text("Jogadores reconhecidos: ${playerRows.size}", color = Gold)
-                    playerRows.forEach { p ->
-                        Text("${p.optString("player")} — ${p.optInt("goals_for")} × ${p.optInt("goals_against")}" +
-                            if (p.optBoolean("is_new_player")) " • NOVO JOGADOR" else "",
-                            color = if (p.optBoolean("is_new_player")) Gold else Color.White)
+                    key(previewRevision) {
+                        playerRows.forEach { p ->
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                OutlinedTextField(
+                                    value = p.optString("detected_name", p.optString("player")),
+                                    onValueChange = { value ->
+                                        p.put("detected_name", value)
+                                        p.put("player", value)
+                                        previewRevision++
+                                    },
+                                    label = { Text(if (p.optBoolean("is_new_player")) "Novo jogador — confirme o nome" else "Jogador") },
+                                    modifier = Modifier.fillMaxWidth(), singleLine = true
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedTextField(
+                                        value = p.optInt("goals_for").toString(),
+                                        onValueChange = { value -> value.toIntOrNull()?.let { p.put("goals_for", it); previewRevision++ } },
+                                        label = { Text("Placar Arqueiros") }, modifier = Modifier.weight(1f), singleLine = true
+                                    )
+                                    OutlinedTextField(
+                                        value = p.optInt("goals_against").toString(),
+                                        onValueChange = { value -> value.toIntOrNull()?.let { p.put("goals_against", it); previewRevision++ } },
+                                        label = { Text("Placar adversário") }, modifier = Modifier.weight(1f), singleLine = true
+                                    )
+                                }
+                                if (p.optBoolean("is_new_player")) {
+                                    Text("Será criado no elenco após a confirmação.", color = Gold,
+                                        style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
                     }
                     if ((result.optJSONArray("new_players")?.length() ?: 0) > 0) {
                         Text("Novos jogadores serão cadastrados após confirmar este registro.", color = Gold,
