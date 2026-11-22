@@ -180,9 +180,24 @@ def _performance_payload(s):
     monthly_rows.sort(key=lambda x: (-x["points"], -x["goals"], -x["assists"], -x["win_rate"], x["name"]))
     fixtures = s.query(FederationFixture).order_by(FederationFixture.created_at.desc()).limit(100).all()
     competitions = {x.id: x.name for x in s.query(Competition).all()}
-    team_totals = {key: sum(row.get(key, 0) for row in ranking_rows)
-                   for key in ("games", "wins", "draws", "losses", "goals", "assists", "points")}
+    # Team performance is counted per approved team confrontation, not once per player.
+    team_matches = s.query(Match).filter(
+        Match.status == "Aprovado",
+        Match.home_score.isnot(None), Match.away_score.isnot(None)
+    ).all()
+    team_totals = {
+        "games": len(team_matches),
+        "wins": sum(x.home_score > x.away_score for x in team_matches),
+        "draws": sum(x.home_score == x.away_score for x in team_matches),
+        "losses": sum(x.home_score < x.away_score for x in team_matches),
+        "goals": sum(x.home_score or 0 for x in team_matches),
+        "conceded": sum(x.away_score or 0 for x in team_matches),
+        "assists": sum(row.get("assists", 0) for row in ranking_rows),
+    }
+    team_totals["goal_difference"] = team_totals["goals"] - team_totals["conceded"]
+    team_totals["points"] = team_totals["wins"] * 3 + team_totals["draws"]
     team_totals["win_rate"] = round(team_totals["wins"] * 100 / team_totals["games"], 1) if team_totals["games"] else 0
+    team_totals["player_appearances"] = sum(row.get("games", 0) for row in ranking_rows)
     return {
         "player_ranking": ranking_rows,
         "team_player_performance": team_totals,
