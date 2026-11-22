@@ -687,7 +687,11 @@ async def mobile_match_image_confirm(request: Request, user=Depends(admin_only),
     team_side = str(d.get("team_side", "first")).lower()
     if team_side not in ("first", "second"):
         raise HTTPException(400, "Lado da Arqueiros inválido.")
-    match = Match(competition_id=int(cid) if cid else None, home="ARQUEIROS E-SPORTS",
+    if hs is None or aw is None:
+        raise HTTPException(400, "O placar geral não foi reconhecido. Corrija o print ou envie uma imagem mais legível.")
+    if not cid:
+        raise HTTPException(400, "Selecione a competição antes de confirmar o confronto.")
+    match = Match(competition_id=int(cid), home="ARQUEIROS E-SPORTS",
                   away=team, home_score=hs, away_score=aw, status="Pendente")
     s.add(match)
     s.flush()
@@ -716,7 +720,12 @@ async def mobile_match_image_confirm(request: Request, user=Depends(admin_only),
                               opponent_name=str(item.get("opponent", "")), goals_for=gf, goals_against=ga))
     if image_hash:
         s.add(MobileImportFingerprint(image_sha256=image_hash, match_id=match.id))
-    log(s, "duel.ocr.mobile.pending", f"#{match.id} — {team}")
+    s.flush()
+    approval_error = match_approval_error(s, match)
+    if approval_error:
+        raise HTTPException(400, approval_error)
+    match.status = "Aprovado"
+    log(s, "duel.ocr.mobile.approved", f"#{match.id} — {team}")
     s.commit()
     return {"ok": True, "id": match.id, "status": match.status,
             "players_registered": sum(1 for item in stats if item.get("is_new_player"))}
