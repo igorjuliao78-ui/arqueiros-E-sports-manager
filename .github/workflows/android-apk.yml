@@ -9,7 +9,7 @@ on:
       - "app.py"
       - ".github/workflows/android-apk.yml"
   push:
-    branches: [feature/android-native-app]
+    branches: [feature/android-native-app, feature/android-native-app-build]
     paths:
       - "android/**"
       - ".github/workflows/android-apk.yml"
