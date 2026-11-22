@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = android.graphics.Color.rgb(11, 11, 16)
         window.navigationBarColor = android.graphics.Color.rgb(11, 11, 16)
-        setContent { ArqueirosApp() }
+        setContent { MaterialTheme(colorScheme = darkColorScheme(background = Ink, surface = Panel, primary = Red, secondary = Gold)) { ArqueirosApp() } }
     }
 }
 
