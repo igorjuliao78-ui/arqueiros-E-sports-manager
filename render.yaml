@@ -1,23 +1,46 @@
 services:
   - type: web
-    name: arqueiros-manager
+    name: arqueiros-manager-docker
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    region: oregon
     plan: free
     healthCheckPath: /health
+    autoDeployTrigger: commit
     envVars:
       - key: DATABASE_URL
-        sync: false
+        fromService:
+          type: web
+          name: arqueiros-E-sports-manager
+          envVarKey: DATABASE_URL
       - key: ADMIN_PANEL_TOKEN
-        generateValue: true
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: TELEGRAM_ADMIN_IDS
-        sync: false
-      - key: TELEGRAM_WEBHOOK_SECRET
-        sync: false
-      - key: WEEKLY_REPORT_TOKEN
-        sync: false
+        fromService:
+          type: web
+          name: arqueiros-E-sports-manager
+          envVarKey: ADMIN_PANEL_TOKEN
       - key: MOBILE_AUTH_SECRET
-        sync: false
+        fromService:
+          type: web
+          name: arqueiros-E-sports-manager
+          envVarKey: MOBILE_AUTH_SECRET
+      - key: TELEGRAM_BOT_TOKEN
+        fromService:
+          type: web
+          name: arqueiros-E-sports-manager
+          envVarKey: TELEGRAM_BOT_TOKEN
+      - key: TELEGRAM_ADMIN_IDS
+        fromService:
+          type: web
+          name: arqueiros-E-sports-manager
+          envVarKey: TELEGRAM_ADMIN_IDS
+      - key: TELEGRAM_WEBHOOK_SECRET
+        fromService:
+          type: web
+          name: arqueiros-E-sports-manager
+          envVarKey: TELEGRAM_WEBHOOK_SECRET
+      - key: WEEKLY_REPORT_TOKEN
+        fromService:
+          type: web
+          name: arqueiros-E-sports-manager
+          envVarKey: WEEKLY_REPORT_TOKEN
