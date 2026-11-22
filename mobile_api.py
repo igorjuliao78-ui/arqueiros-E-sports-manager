@@ -107,16 +107,23 @@ def _store_performance(s, player_id, competition_id, goals_for, goals_against, g
     if row is None:
         row = PlayerPerformance(player_id=player_id, competition_id=cid, period=period)
         s.add(row)
+    # Older rows may contain NULL counters despite the model defaults.
+    # Normalize every counter before incrementing so one legacy row cannot
+    # prevent the whole mobile bootstrap from loading.
+    for field in ("games", "wins", "draws", "losses", "goals", "assists", "conceded"):
+        setattr(row, field, int(getattr(row, field, 0) or 0))
+    gf, ga = int(goals_for or 0), int(goals_against or 0)
+    scored, assisted = int(goals or 0), int(assists or 0)
     row.games += 1
-    if goals_for > goals_against:
+    if gf > ga:
         row.wins += 1
-    elif goals_for == goals_against:
+    elif gf == ga:
         row.draws += 1
     else:
         row.losses += 1
-    row.goals += goals
-    row.assists += assists
-    row.conceded += goals_against
+    row.goals += scored
+    row.assists += assisted
+    row.conceded += ga
 
 
 def _migrate_approved_player_games(s):
