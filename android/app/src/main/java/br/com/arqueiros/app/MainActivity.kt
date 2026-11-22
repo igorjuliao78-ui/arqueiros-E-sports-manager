@@ -352,9 +352,20 @@ private fun StatCard(label: String, value: Int, modifier: Modifier = Modifier) {
 @Composable
 private fun PlayersTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit, onAction: (String, String, JSONObject?) -> Unit) {
     var selectedPlayer by remember { mutableStateOf<JSONObject?>(null) }
-    val players = listOfJson(data.optJSONArray("players")).filter {
+    var playerSearch by remember { mutableStateOf("") }
+    var statusFilter by remember { mutableStateOf("Todos") }
+    val allPlayers = listOfJson(data.optJSONArray("players")).filter {
         val n = it.optString("name").trim().lowercase()
-        it.optBoolean("active", true) && n != "cancelar" && n != "❌ cancelar"
+        n != "cancelar" && n != "❌ cancelar"
+    }
+    val players = allPlayers.filter { p ->
+        val status = p.optString("status", if (p.optBoolean("active", true)) "Ativo" else "Desligado")
+        val matchesStatus = statusFilter == "Todos" || status.equals(statusFilter, ignoreCase = true)
+        val query = playerSearch.trim()
+        val matchesQuery = query.isBlank() ||
+            p.optString("name").contains(query, ignoreCase = true) ||
+            p.optString("nickname").contains(query, ignoreCase = true)
+        matchesStatus && matchesQuery
     }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -362,10 +373,34 @@ private fun PlayersTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit, onAc
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     SectionTitle("ELENCO OFICIAL")
-                    Text("${players.size} integrantes cadastrados", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    Text("${allPlayers.size} integrantes no histórico do elenco", color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
                 if (admin) Button(onClick = onAdd, colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("+ JOGADOR") }
             }
+        }
+        item {
+            OutlinedTextField(
+                value = playerSearch,
+                onValueChange = { playerSearch = it },
+                label = { Text("Pesquisar jogador ou nick") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                listOf("Todos", "Ativo", "Reserva", "Afastado", "Desligado").forEach { status ->
+                    TextButton(
+                        onClick = { statusFilter = status },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            (if (statusFilter == status) "• " else "") + status,
+                            color = if (statusFilter == status) Gold else Muted,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            }
+            Text("${players.size} jogador(es) exibido(s)", color = Muted, style = MaterialTheme.typography.labelSmall)
         }
         items(players) { p ->
             val status = p.optString("status", "Ativo")
