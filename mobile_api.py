@@ -596,21 +596,41 @@ def mobile_full_report(user=Depends(admin_only)):
 def _parse_mobile_print_rows(text: str, team_side: str):
     import re
     rows = []
+    pending_players = []
     for line in text.splitlines():
-        line = re.sub(r"\s+", " ", line).strip()
-        duel = re.match(r"^\s*(?:\d+\s*(?:[º°])?\s*[.)➤>»:-]?\s*)?(.+?)\s+(\d+)\s*[x×]\s*(\d+)(?:\s+(.+))?$", line, re.I)
+        line = re.sub(r"\\s+", " ", line).strip(" \\t•")
+        line = re.sub(r"^\\d+\\s*(?:[º°])?\\s*[.)➤>»:-]\\s*", "", line)
+
+        # Official WhatsApp description format: PLAYER | 2 x 1
+        scored = re.match(r"^(.+?)\\s*\\|\\s*(\\d+)\\s*[x×]\\s*(\\d+)\\s*$", line, re.I)
+        if scored:
+            player_name = scored.group(1).strip(" •➤».-:")
+            if player_name:
+                rows.append({"detected_name": player_name, "opponent": "",
+                             "goals_for": int(scored.group(2)),
+                             "goals_against": int(scored.group(3))})
+            continue
+
+        # Pending players are visible in the review but never enter statistics.
+        pending = re.match(r"^(.+?)\\s*\\|\\s*(?:PENDENTE|AGUARDANDO|NÃO\\s+INFORMADO)\\s*$", line, re.I)
+        if pending:
+            player_name = pending.group(1).strip(" •➤».-:")
+            if player_name:
+                pending_players.append(player_name)
+            continue
+
+        # Also accept a direct matchup line, where both player names are shown.
+        duel = re.match(r"^\\s*(?:\\d+\\s*(?:[º°])?\\s*[.)➤>»:-]?\\s*)?(.+?)\\s+(\\d+)\\s*[x×]\\s*(\\d+)(?:\\s+(.+))?$", line, re.I)
         if not duel:
             continue
         left = duel.group(1).strip(" •➤».-:")
         right = (duel.group(4) or "").strip(" •➤».-:")
         player_name, opponent = (left, right) if team_side == "first" else (right, left)
-        if not player_name:
-            continue
-        rows.append({"detected_name": player_name, "opponent": opponent,
-                     "goals_for": int(duel.group(2)) if team_side == "first" else int(duel.group(3)),
-                     "goals_against": int(duel.group(3)) if team_side == "first" else int(duel.group(2))})
-    return rows
-
+        if player_name:
+            rows.append({"detected_name": player_name, "opponent": opponent,
+                         "goals_for": int(duel.group(2)) if team_side == "first" else int(duel.group(3)),
+                         "goals_against": int(duel.group(3)) if team_side == "first" else int(duel.group(2))})
+    return rows, pending_players
 
 @router.post("/matches/image/preview")
 async def mobile_match_image_preview(request: Request, user=Depends(admin_only), s: Session = Depends(get_db)):
@@ -639,7 +659,7 @@ async def mobile_match_image_preview(request: Request, user=Depends(admin_only),
         roster = list({key for key in alias_to_player if key})
         text = extract_duel_text(image, roster)
         parsed = parse_duel_ocr(text, roster)
-        raw_rows = _parse_mobile_print_rows(text, team_side)
+        raw_rows, pending_players = _parse_mobile_print_rows(text, team_side)
     except Exception as exc:
         raise HTTPException(400, "Não foi possível ler o print: " + str(exc)[:180])
     stats = []
@@ -669,14 +689,15 @@ async def mobile_match_image_preview(request: Request, user=Depends(admin_only),
                       "opponent": row["opponent"]})
         if player is None:
             new_players[normalize_name(row["detected_name"])] = row["detected_name"]
-    if not stats:
-        raise HTTPException(422, "Não encontrei linhas de confronto com placares individuais. Confira se o print está completo e legível.")
+    if not stats and not pending_players:
+        raise HTTPException(422, "Não encontrei jogadores com placares individuais. Confira se o print está completo e legível.")
     scores = parsed.get("scores") or []
     has_explicit_reverse_header = bool(re.search(r"[^\s|]+\s*[x×]\s*\bAQR\b", text, re.I))
     if team_side == "second" and not has_explicit_reverse_header and len(scores) >= 2:
         scores = [scores[1], scores[0]]
     return {"team": parsed.get("team", "Equipe adversária"), "scores": scores,
             "stats": stats, "new_players": list(new_players.values()),
+            "pending_players": pending_players,
             "team_side": team_side, "image_sha256": image_hash,
             "recognized": len(stats),
             "note": "Novos jogadores serão cadastrados somente após a conferência e confirmação do administrador."}
@@ -699,8 +720,8 @@ async def mobile_match_image_confirm(request: Request, user=Depends(admin_only),
             return {"ok": True, "duplicate": True, "id": duplicate.match_id,
                     "status": "Já importado; nenhum registro duplicado foi criado."}
     stats = d.get("stats") or []
-    if not stats:
-        raise HTTPException(400, "Nenhum jogador reconhecido para registrar.")
+    if not stats and not d.get("pending_players"):
+        raise HTTPException(400, "Nenhum jogador com placar concluído para registrar.")
     team_side = str(d.get("team_side", "first")).lower()
     if team_side not in ("first", "second"):
         raise HTTPException(400, "Lado da Arqueiros inválido.")
