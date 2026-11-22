@@ -758,6 +758,7 @@ async def mobile_match_image_confirm(request: Request, user=Depends(admin_only),
                   away=team, home_score=hs, away_score=aw, status="Pendente")
     s.add(match)
     s.flush()
+    created_players = 0
     for item in stats:
         player_id = item.get("player_id")
         detected_name = str(item.get("detected_name") or item.get("player") or "").strip()
@@ -774,6 +775,7 @@ async def mobile_match_image_confirm(request: Request, user=Depends(admin_only),
             if existing is None:
                 s.add(player)
                 s.flush()
+                created_players += 1
                 log(s, "player.created.from_match_print", detected_name)
         gf, ga = int(item["goals_for"]), int(item["goals_against"])
         if gf < 0 or ga < 0:
@@ -797,7 +799,7 @@ async def mobile_match_image_confirm(request: Request, user=Depends(admin_only),
     log(s, "duel.ocr.mobile.approved", f"#{match.id} — {team}")
     s.commit()
     return {"ok": True, "id": match.id, "status": match.status,
-            "players_registered": sum(1 for item in stats if item.get("is_new_player"))}
+            "players_registered": created_players}
 
 
 @router.post("/player-games")
