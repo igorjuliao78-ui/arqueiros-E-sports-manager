@@ -581,6 +581,8 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
     }
     preview?.let { result ->
         val scoreArray = result.optJSONArray("scores") ?: JSONArray()
+        if (scoreArray.length() == 0) { scoreArray.put(JSONObject.NULL); scoreArray.put(JSONObject.NULL) }
+        else if (scoreArray.length() == 1) scoreArray.put(JSONObject.NULL)
         val playerRows = listOfJson(result.optJSONArray("stats"))
         var previewRevision by remember(result) { mutableIntStateOf(0) }
         val selectedComp = competitions.firstOrNull { it.optInt("id").toString() == competitionId }
@@ -589,7 +591,19 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.heightIn(max = 420.dp)) {
                     Text("Adversário: ${result.optString("team")}", color = Color.White, fontWeight = FontWeight.Bold)
-                    Text("Placar dos clãs: ${if (scoreArray.length() > 0) scoreArray.opt(0) else "?"} × ${if (scoreArray.length() > 1) scoreArray.opt(1) else "?"}", color = Color.White)
+                    Text("Corrija o placar geral, se necessário:", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = if (scoreArray.isNull(0)) "" else scoreArray.optString(0),
+                            onValueChange = { value -> value.toIntOrNull()?.let { scoreArray.put(0, it); previewRevision++ } },
+                            label = { Text("Arqueiros") }, modifier = Modifier.weight(1f), singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = if (scoreArray.isNull(1)) "" else scoreArray.optString(1),
+                            onValueChange = { value -> value.toIntOrNull()?.let { scoreArray.put(1, it); previewRevision++ } },
+                            label = { Text("Adversário") }, modifier = Modifier.weight(1f), singleLine = true
+                        )
+                    }
                     Text("Jogadores reconhecidos: ${playerRows.size}", color = Gold)
                     key(previewRevision) {
                         playerRows.forEach { p ->
