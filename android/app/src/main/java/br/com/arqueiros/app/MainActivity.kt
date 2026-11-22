@@ -368,7 +368,7 @@ private fun PlayersTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit, onAc
     var statusFilter by remember { mutableStateOf("Todos") }
     val allPlayers = listOfJson(data.optJSONArray("players")).filter {
         val n = it.optString("name").trim().lowercase()
-        n != "cancelar" && n != "❌ cancelar"
+        n != "cancelar" && n != "❌ cancelar" && it.optString("status", "Ativo") != "Desligado" && it.optBoolean("active", true)
     }
     val players = allPlayers.filter { p ->
         val status = p.optString("status", if (p.optBoolean("active", true)) "Ativo" else "Desligado")
@@ -505,6 +505,11 @@ private fun CompetitionsTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit,
                     Text(c.optString("name"), color = Color.White, fontWeight = FontWeight.Bold)
                     Text(c.optString("kind") + " • " + c.optString("season"), color = Muted,
                         style = MaterialTheme.typography.bodySmall)
+                    val history = listOfJson(data.optJSONArray("matches")).filter { it.optInt("competition_id") == c.optInt("id") }
+                    Text("HISTÓRICO • ${history.size} partida(s)", color = Gold, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                    history.forEach { match ->
+                        Text("${match.optString("home")} ${match.opt("home_score")} × ${match.opt("away_score")} ${match.optString("away")} • ${match.optString("status")}", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                    }
                     if (admin) Row(verticalAlignment = Alignment.CenterVertically) {
                         TextButton(onClick = { onRegisterGame(c.optInt("id")) }) { Text("REGISTRAR JOGO NESTA COMPETIÇÃO", color = Gold) }
                         Spacer(Modifier.weight(1f))
