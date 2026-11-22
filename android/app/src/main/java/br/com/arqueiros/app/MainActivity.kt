@@ -220,6 +220,7 @@ private fun MainScreen(data: JSONObject, user: JSONObject, token: String, busy: 
             else -> null
         }
         if (spec != null) FormDialog(spec, players = listOfJson(data.optJSONArray("players")),
+            competitions = listOfJson(data.optJSONArray("competitions")),
             initialValues = if (type == "player_game") mapOf("competition_id" to competitionForGame) else emptyMap(),
             onDismiss = { form = null }) { values ->
             onAction(spec.path, "POST", bodyOf(values)); form = null; competitionForGame = ""
@@ -231,7 +232,7 @@ private data class FormSpec(val title: String, val fields: List<Pair<String, Str
 
 @Composable
 private fun FormDialog(spec: FormSpec, players: List<JSONObject> = emptyList(),
-                       initialValues: Map<String, String> = emptyMap(),
+                       competitions: List<JSONObject> = emptyList(), initialValues: Map<String, String> = emptyMap(),
                        onDismiss: () -> Unit, onSave: (Map<String, String>) -> Unit) {
     val values = remember(spec, initialValues) { mutableStateMapOf<String, String>().apply {
         spec.fields.forEach { put(it.first, initialValues[it.first] ?: "") }
@@ -245,7 +246,22 @@ private fun FormDialog(spec: FormSpec, players: List<JSONObject> = emptyList(),
         title = { Text(spec.title, color = Color.White) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.heightIn(max = 470.dp)) {
             spec.fields.forEach { (key, label) ->
-                if (key == "player_id") {
+                if (key == "competition_id") {
+                    val selectedCompetition = competitions.firstOrNull { it.optInt("id").toString() == values["competition_id"] }
+                    Text(label, color = Gold, fontWeight = FontWeight.Bold)
+                    Text(selectedCompetition?.optString("name") ?: "Selecione uma competição", color = Color.White)
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 140.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        items(competitions) { c ->
+                            val selected = values["competition_id"] == c.optInt("id").toString()
+                            TextButton(onClick = { values["competition_id"] = c.optInt("id").toString() },
+                                modifier = Modifier.fillMaxWidth()) {
+                                Text((if (selected) "✓ " else "") + c.optString("name"),
+                                    color = if (selected) Gold else Color.White)
+                            }
+                        }
+                        if (competitions.isEmpty()) item { Text("Cadastre uma competição primeiro.", color = Muted) }
+                    }
+                } else if (key == "player_id") {
                     Text(label, color = Gold, fontWeight = FontWeight.Bold)
                     OutlinedTextField(playerSearch, { playerSearch = it }, label = { Text("Pesquisar jogador pelo nome") },
                         modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -274,7 +290,8 @@ private fun FormDialog(spec: FormSpec, players: List<JSONObject> = emptyList(),
                 }
             }
         } },
-        confirmButton = { TextButton(onClick = { onSave(values.toMap()) }, enabled = spec.fields.none { it.first == "player_id" } || !values["player_id"].isNullOrBlank()) { Text("SALVAR", color = Gold) } },
+        confirmButton = { TextButton(onClick = { onSave(values.toMap()) }, enabled = (spec.fields.none { it.first == "player_id" } || !values["player_id"].isNullOrBlank()) &&
+                (spec.title != "Lançar jogo de jogador" || !values["competition_id"].isNullOrBlank())) { Text("SALVAR", color = Gold) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("CANCELAR", color = Muted) } })
 }
 
