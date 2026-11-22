@@ -64,19 +64,26 @@ FederationFixture.__table__.create(bind=engine, checkfirst=True)
 
 
 def _player_performance(s, player, month=None):
+    # Inclui os jogos individuais novos e os confrontos já registrados pelo bot.
     q = s.query(PlayerGame).filter(PlayerGame.player_id == player.id, PlayerGame.status == "Aprovado")
+    legacy_q = s.query(MatchPlayerStat).join(Match, Match.id == MatchPlayerStat.match_id).filter(
+        MatchPlayerStat.player_name == player.name, Match.status == "Aprovado",
+        MatchPlayerStat.goals_for.isnot(None), MatchPlayerStat.goals_against.isnot(None))
     if month:
         q = q.filter(PlayerGame.created_at >= month[0], PlayerGame.created_at < month[1])
+        legacy_q = legacy_q.filter(Match.created_at >= month[0], Match.created_at < month[1])
     games = q.all()
-    wins = sum(x.goals_for > x.goals_against for x in games)
-    draws = sum(x.goals_for == x.goals_against for x in games)
-    losses = len(games) - wins - draws
-    goals = sum(x.goals for x in games)
+    legacy = legacy_q.all()
+    all_games = [(x.goals_for, x.goals_against) for x in games] + [(x.goals_for, x.goals_against) for x in legacy]
+    wins = sum(gf > ga for gf, ga in all_games)
+    draws = sum(gf == ga for gf, ga in all_games)
+    losses = len(all_games) - wins - draws
+    goals = sum(x.goals for x in games) + sum(x.goals_for for x in legacy)
     assists = sum(x.assists for x in games)
-    return {"games": len(games), "wins": wins, "draws": draws, "losses": losses,
+    return {"games": len(all_games), "wins": wins, "draws": draws, "losses": losses,
             "goals": goals, "assists": assists,
             "points": wins * 3 + draws,
-            "win_rate": round(wins * 100 / len(games), 1) if games else 0}
+            "win_rate": round(wins * 100 / len(all_games), 1) if all_games else 0}
 
 
 def _performance_payload(s):
