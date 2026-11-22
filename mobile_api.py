@@ -702,7 +702,7 @@ async def mobile_match_image_preview(request: Request, user=Depends(admin_only),
     detected_competition_name = ""
     detected_competition_id = None
     for line in text.splitlines():
-        clean_line = re.sub(r"^[#\\s]+", "", line).strip()
+        clean_line = line.strip().lstrip("#").strip()
         if not clean_line:
             continue
         if clean_line.lower().startswith("competição:"):
