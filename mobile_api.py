@@ -108,7 +108,9 @@ def _migrate_approved_player_games(s):
     for row in old_rows:
         _store_performance(s, row.player_id, row.competition_id, row.goals_for,
                            row.goals_against, row.goals, row.assists, row.created_at)
-        s.delete(row)
+        # Keep the original match record for the player's historical timeline.
+        # "Consolidado" prevents the next bootstrap from adding these totals twice.
+        row.status = "Consolidado"
     s.commit()
 
 
@@ -337,7 +339,10 @@ def mobile_player_stats(pid: int, competition_id: Optional[int] = None,
     if not p:
         raise HTTPException(404, "Jogador não encontrado.")
     stats = player_metrics(s, p, competition_id)
-    games = s.query(PlayerGame).filter(PlayerGame.player_id == pid, PlayerGame.status == "Aprovado")
+    games = s.query(PlayerGame).filter(
+        PlayerGame.player_id == pid,
+        PlayerGame.status.in_(["Aprovado", "Consolidado"])
+    )
     if competition_id:
         games = games.filter(PlayerGame.competition_id == competition_id)
     rows = games.order_by(PlayerGame.created_at.desc()).all()
@@ -651,10 +656,11 @@ def mobile_player_game_action(gid: int, action: str, user=Depends(admin_only), s
         _store_performance(s, row.player_id, row.competition_id, row.goals_for,
                            row.goals_against, row.goals, row.assists, row.created_at)
         log(s, "player.game.approve", (p.name if p else str(row.player_id)) + " x " + row.opponent)
-        s.delete(row)
+        # Preserve the approved source row; totals are consolidated exactly once.
+        row.status = "Consolidado"
     else:
         log(s, "player.game.reject", (p.name if p else str(row.player_id)) + " x " + row.opponent)
-        s.delete(row)
+        # Keep rejected submissions for auditability instead of deleting evidence.
     s.commit()
     return {"ok": True}
 
