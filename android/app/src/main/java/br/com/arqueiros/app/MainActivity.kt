@@ -641,6 +641,12 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
                         Text("Novos jogadores serão cadastrados após confirmar este registro.", color = Gold,
                             style = MaterialTheme.typography.bodySmall)
                     }
+                    val pendingPlayers = result.optJSONArray("pending_players")
+                    if ((pendingPlayers?.length() ?: 0) > 0) {
+                        val pendingNames = (0 until (pendingPlayers?.length() ?: 0)).map { pendingPlayers!!.optString(it) }
+                        Text("PENDENTES — não entram nas estatísticas: " + pendingNames.joinToString(", "),
+                            color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
                     if (competitions.isNotEmpty()) {
                         Box {
                             OutlinedButton(onClick = { competitionMenu = true }) {
