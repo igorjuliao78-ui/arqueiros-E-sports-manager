@@ -146,7 +146,8 @@ def mobile_me(user=Depends(current_user), s: Session = Depends(get_db)):
 @router.get("/bootstrap")
 def mobile_bootstrap(user=Depends(current_user), s: Session = Depends(get_db)):
     is_admin = user.get("role") == "admin"
-    players = s.query(Player).order_by(Player.name).all()
+    players = [p for p in s.query(Player).order_by(Player.name).all()
+               if (p.name or "").strip().casefold() not in {"cancelar", "❌ cancelar"}]
     comps = s.query(Competition).order_by(Competition.name).all()
     matches = s.query(Match).order_by(Match.created_at.desc(), Match.id.desc()).limit(200).all()
     titles = s.query(Title).order_by(Title.won_at.desc()).all()

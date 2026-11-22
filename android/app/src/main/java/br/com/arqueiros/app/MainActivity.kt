@@ -162,9 +162,12 @@ private fun MainScreen(data: JSONObject, user: JSONObject, token: String, busy: 
     val context = LocalContext.current
     Scaffold(containerColor = Ink, topBar = {
         Row(Modifier.fillMaxWidth().background(Panel).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            ArqueirosLogo(Modifier.size(48.dp))
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("ARQUEIROS E-SPORTS", color = Gold, fontWeight = FontWeight.Black)
-                Text("Olá, " + user.optString("name", "Integrante"), color = Muted, style = MaterialTheme.typography.bodySmall)
+                Text("ARQUEIROS", color = Gold, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
+                Text("GESTÃO • E-SPORTS", color = Muted, style = MaterialTheme.typography.labelSmall)
+                Text("Olá, " + user.optString("name", "Integrante"), color = Color.White, style = MaterialTheme.typography.bodySmall)
             }
             TextButton(onClick = onRefresh) { Text("ATUALIZAR", color = Gold) }
             TextButton(onClick = onLogout) { Text("SAIR", color = Muted) }
@@ -236,6 +239,21 @@ private fun FormDialog(spec: FormSpec, onDismiss: () -> Unit, onSave: (Map<Strin
 private fun HomeTab(data: JSONObject) {
     val d = data.optJSONObject("dashboard") ?: JSONObject()
     LazyColumn(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Panel)) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ArqueirosLogo(Modifier.size(76.dp))
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text("ARQUEIROS E-SPORTS", color = Gold, fontWeight = FontWeight.Black,
+                            style = MaterialTheme.typography.titleMedium)
+                        Text("CENTRAL DE GESTÃO DA EQUIPE", color = Muted,
+                            style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
         item { SectionTitle("PAINEL DA EQUIPE") }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatCard("Jogadores", d.optInt("players"), Modifier.weight(1f)); StatCard("Competições", d.optInt("competitions"), Modifier.weight(1f))
@@ -249,7 +267,15 @@ private fun HomeTab(data: JSONObject) {
                 r.optInt("J").toString() + "J  " + r.optInt("V") + "V  " + r.optInt("E") + "E  " + r.optInt("D") + "D  •  SG " + r.optInt("SG"))
         }
         item { SectionTitle("COMUNICADOS") }
-        items(listOfJson(data.optJSONArray("notices"))) { n -> InfoCard(n.optString("title"), n.optString("body")) }
+        items(listOfJson(data.optJSONArray("notices"))) { n ->
+            Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(13.dp)).padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(n.optString("title"), color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(n.optString("body"), color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
     }
 }
 
@@ -265,16 +291,74 @@ private fun StatCard(label: String, value: Int, modifier: Modifier = Modifier) {
 
 @Composable
 private fun PlayersTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit, onAction: (String, String, JSONObject?) -> Unit) {
-    LazyColumn(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        item { Row(verticalAlignment = Alignment.CenterVertically) { SectionTitle("ELENCO"); Spacer(Modifier.weight(1f)); if (admin) Button(onClick = onAdd, colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("+ JOGADOR") } } }
-        items(listOfJson(data.optJSONArray("players"))) { p ->
-            Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(13.dp)).padding(13.dp)) {
-                Text(p.optString("name"), color = Color.White, fontWeight = FontWeight.Bold)
-                Text(listOf(p.optString("nickname"), p.optString("position"), p.optString("status")).filter { it.isNotBlank() }.joinToString(" • "), color = Muted)
-                if (admin) Row {
-                    TextButton(onClick = { onAction("api/mobile/players/${p.optInt("id")}/status", "PUT", JSONObject().put("status", nextStatus(p.optString("status")))) }) { Text("ALTERAR STATUS", color = Gold) }
+    val players = listOfJson(data.optJSONArray("players")).filter {
+        val n = it.optString("name").trim().lowercase()
+        n != "cancelar" && n != "❌ cancelar"
+    }
+    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    SectionTitle("ELENCO OFICIAL")
+                    Text("${players.size} integrantes cadastrados", color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+                if (admin) Button(onClick = onAdd, colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("+ JOGADOR") }
+            }
+        }
+        items(players) { p ->
+            val status = p.optString("status", "Ativo")
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Panel),
+                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)) {
+                Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(48.dp).background(Red, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                            Text(p.optString("name").trim().take(1).uppercase(), color = Color.White,
+                                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(p.optString("name"), color = Color.White, fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium)
+                            if (p.optString("nickname").isNotBlank())
+                                Text("@${p.optString("nickname")}", color = Gold, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Surface(color = if (status == "Ativo") Color(0xFF174D38) else Color(0xFF45351D),
+                            shape = RoundedCornerShape(50)) {
+                            Text(status.uppercase(), color = if (status == "Ativo") Color(0xFF8BE0B4) else Gold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    HorizontalDivider(color = Color(0xFF34343E))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (p.optString("position").isNotBlank()) InfoChip("POSIÇÃO", p.optString("position"))
+                        if (p.optString("team").isNotBlank()) InfoChip("EQUIPE", p.optString("team"))
+                    }
+                    if (admin) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Gerenciar situação", color = Muted, style = MaterialTheme.typography.labelSmall)
+                            Spacer(Modifier.weight(1f))
+                            TextButton(onClick = {
+                                onAction("api/mobile/players/${p.optInt("id")}/status", "PUT",
+                                    JSONObject().put("status", nextStatus(status)))
+                            }) { Text("ALTERAR STATUS", color = Gold, fontWeight = FontWeight.Bold) }
+                        }
+                    }
                 }
             }
+        }
+        if (players.isEmpty()) item { InfoCard("Nenhum jogador cadastrado", "Adicione integrantes para montar o elenco.") }
+    }
+}
+
+@Composable
+private fun InfoChip(label: String, value: String) {
+    Surface(color = Color(0xFF25252E), shape = RoundedCornerShape(9.dp)) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
+            Text(label, color = Muted, style = MaterialTheme.typography.labelSmall)
+            Text(value, color = Color.White, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -285,7 +369,21 @@ private fun nextStatus(s: String) = when (s) { "Ativo" -> "Reserva"; "Reserva" -
 private fun CompetitionsTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit, onAction: (String, String, JSONObject?) -> Unit) {
     LazyColumn(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
         item { Row(verticalAlignment = Alignment.CenterVertically) { SectionTitle("COMPETIÇÕES"); Spacer(Modifier.weight(1f)); if (admin) Button(onClick = onAdd, colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("+ COMPETIÇÃO") } } }
-        items(listOfJson(data.optJSONArray("competitions"))) { c -> InfoCard(c.optString("name"), c.optString("kind") + " • " + c.optString("season")) }
+        items(listOfJson(data.optJSONArray("competitions"))) { c ->
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp),
+                colors = CardDefaults.cardColors(containerColor = Panel)) {
+                Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(c.optString("name"), color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(c.optString("kind") + " • " + c.optString("season"), color = Muted,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (admin) TextButton(onClick = {
+                        onAction("api/mobile/competitions/${c.optInt("id")}", "DELETE", null)
+                    }) { Text("EXCLUIR", color = Color(0xFFFF8B8B)) }
+                }
+            }
+        }
     }
 }
 
@@ -326,7 +424,21 @@ private fun MoreTab(data: JSONObject, admin: Boolean, onAdd: (String) -> Unit,
             item { SectionTitle("RECRUTAMENTO") }
             items(listOfJson(data.optJSONArray("recruitment"))) { x -> InfoCard(x.optString("nickname"), x.optString("position") + " • " + x.optString("contact") + " • " + x.optString("status")) }
             item { SectionTitle("USUÁRIOS DO APP") }
-            items(listOfJson(data.optJSONArray("users"))) { x -> InfoCard(x.optString("username"), x.optString("role") + " • " + if (x.optBoolean("active")) "Ativo" else "Bloqueado") }
+            items(listOfJson(data.optJSONArray("users"))) { x ->
+                Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(13.dp)).padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(x.optString("username"), color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(x.optString("role") + " • " + if (x.optBoolean("active")) "Ativo" else "Bloqueado",
+                            color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = {
+                        onAction("api/mobile/users/${x.optInt("id")}/active", "PUT",
+                            JSONObject().put("active", !x.optBoolean("active")))
+                    }) { Text(if (x.optBoolean("active")) "BLOQUEAR" else "ATIVAR",
+                        color = if (x.optBoolean("active")) Color(0xFFFF8B8B) else Gold) }
+                }
+            }
         }
     }
 }
