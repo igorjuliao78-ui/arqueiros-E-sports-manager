@@ -555,7 +555,7 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
             }
         }
         item {
-            Text("Nos confrontos, a Arqueiros aparece como:", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Text("No cabeçalho, a Arqueiros aparece como:", color = Muted, style = MaterialTheme.typography.bodySmall)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { teamSide = "first" }, modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(containerColor = if (teamSide == "first") Red else Panel)) {
