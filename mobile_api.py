@@ -640,7 +640,8 @@ async def mobile_match_image_preview(request: Request, user=Depends(admin_only),
     if not stats:
         raise HTTPException(422, "Não encontrei linhas de confronto com placares individuais. Confira se o print está completo e legível.")
     scores = parsed.get("scores") or []
-    if team_side == "second" and len(scores) >= 2:
+    has_explicit_reverse_header = bool(re.search(r"[^\\s|]+\\s*[x×]\\s*\\bAQR\\b", text, re.I))
+    if team_side == "second" and not has_explicit_reverse_header and len(scores) >= 2:
         scores = [scores[1], scores[0]]
     return {"team": parsed.get("team", "Equipe adversária"), "scores": scores,
             "stats": stats, "new_players": list(new_players.values()),
