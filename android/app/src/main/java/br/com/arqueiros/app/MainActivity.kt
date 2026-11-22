@@ -274,9 +274,6 @@ private fun HomeTab(data: JSONObject) {
                     Text(n.optString("title"), color = Color.White, fontWeight = FontWeight.Bold)
                     Text(n.optString("body"), color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
-                if (admin) TextButton(onClick = {
-                    onAction("api/mobile/notices/${n.optInt("id")}", "DELETE", null)
-                }) { Text("EXCLUIR", color = Color(0xFFFF8B8B)) }
             }
         }
     }
