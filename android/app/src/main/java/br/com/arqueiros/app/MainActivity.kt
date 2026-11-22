@@ -8,6 +8,7 @@ import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -70,7 +71,7 @@ private suspend fun api(path: String, method: String = "GET", token: String? = n
 private fun bodyOf(values: Map<String, String>): JSONObject = JSONObject().apply {
     values.forEach { (key, value) ->
         if (value.isNotBlank()) {
-            if (key in listOf("home_score", "away_score", "competition_id", "player_id")) put(key, value.toIntOrNull() ?: 0)
+            if (key in listOf("home_score", "away_score", "competition_id", "player_id", "goals_for", "goals_against", "goals", "assists", "score_for", "score_against")) put(key, value.toIntOrNull() ?: 0)
             else put(key, value)
         }
     }
@@ -162,17 +163,20 @@ private fun MainScreen(data: JSONObject, user: JSONObject, token: String, busy: 
     val context = LocalContext.current
     Scaffold(containerColor = Ink, topBar = {
         Row(Modifier.fillMaxWidth().background(Panel).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            ArqueirosLogo(Modifier.size(48.dp))
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("ARQUEIROS E-SPORTS", color = Gold, fontWeight = FontWeight.Black)
-                Text("Olá, " + user.optString("name", "Integrante"), color = Muted, style = MaterialTheme.typography.bodySmall)
+                Text("ARQUEIROS", color = Gold, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
+                Text("GESTÃO • E-SPORTS", color = Muted, style = MaterialTheme.typography.labelSmall)
+                Text("Olá, " + user.optString("name", "Integrante"), color = Color.White, style = MaterialTheme.typography.bodySmall)
             }
             TextButton(onClick = onRefresh) { Text("ATUALIZAR", color = Gold) }
             TextButton(onClick = onLogout) { Text("SAIR", color = Muted) }
         }
     }, bottomBar = {
         NavigationBar(containerColor = Panel) {
-            listOf("Início", "Jogadores", "Competições", "Partidas", "Mais").forEachIndexed { i, label ->
-                NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Text(listOf("⌂", "♟", "🏆", "⚽", "☰")[i]) },
+            listOf("Início", "Jogadores", "Competições", "Partidas", "Desempenho", "Mais").forEachIndexed { i, label ->
+                NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Text(listOf("⌂", "♟", "🏆", "⚽", "★", "☰")[i]) },
                     label = { Text(label) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = Gold, selectedTextColor = Gold, indicatorColor = Red, unselectedTextColor = Muted))
             }
         }
@@ -185,6 +189,7 @@ private fun MainScreen(data: JSONObject, user: JSONObject, token: String, busy: 
                 1 -> PlayersTab(data, admin, { form = "player" }, onAction)
                 2 -> CompetitionsTab(data, admin, { form = "competition" }, onAction)
                 3 -> MatchesTab(data, admin, onAction)
+                4 -> PerformanceTab(data, admin, { form = it }, onAction)
                 else -> MoreTab(data, admin, { form = it }, onAction) {
                     val request = DownloadManager.Request(Uri.parse(BuildConfig.API_BASE_URL.trimEnd('/') + "/api/mobile/reports/full.pdf"))
                         .addRequestHeader("Authorization", "Bearer $token")
@@ -201,6 +206,8 @@ private fun MainScreen(data: JSONObject, user: JSONObject, token: String, busy: 
             "player" -> FormSpec("Novo jogador", listOf("name" to "Nome", "nickname" to "Nick", "position" to "Posição", "team" to "Equipe/divisão", "telegram_chat_id" to "ID Telegram opcional"), "api/mobile/players")
             "competition" -> FormSpec("Nova competição", listOf("name" to "Nome", "kind" to "Tipo: Liga/Copa/Torneio", "season" to "Temporada"), "api/mobile/competitions")
             "match" -> FormSpec("Registrar confronto", listOf("home" to "Equipe Arqueiros", "away" to "Adversário", "home_score" to "Gols Arqueiros", "away_score" to "Gols adversário", "competition_id" to "ID da competição opcional"), "api/mobile/matches")
+            "player_game" -> FormSpec("Lançar jogo de jogador", listOf("player_name" to "Nome do jogador (igual ao elenco)", "opponent" to "Adversário", "competition_id" to "ID da competição (opcional)", "goals_for" to "Placar do jogador", "goals_against" to "Placar adversário", "goals" to "Gols do jogador", "assists" to "Assistências", "evidence_url" to "Link do print/comprovação"), "api/mobile/player-games")
+            "federation" -> FormSpec("Atualizar confronto de federação", listOf("opponent" to "Equipe adversária", "round" to "Rodada", "format" to "Formato: 3x3, 5x5 ou 6x6", "competition_id" to "ID da competição (opcional)", "score_for" to "Placar Arqueiros", "score_against" to "Placar adversário", "lineup" to "Escalação (nomes separados por vírgula)", "evidence_url" to "Link do print/comprovação"), "api/mobile/federation")
             "title" -> FormSpec("Registrar título", listOf("name" to "Título", "season" to "Temporada", "competition_id" to "ID competição opcional", "player_id" to "ID jogador opcional", "notes" to "Observações"), "api/mobile/titles")
             "notice" -> FormSpec("Publicar comunicado", listOf("title" to "Título", "body" to "Mensagem"), "api/mobile/notices")
             "discipline" -> FormSpec("Registrar disciplina", listOf("player" to "Jogador", "reason" to "Motivo", "sanction" to "Sanção"), "api/mobile/discipline")
@@ -236,6 +243,21 @@ private fun FormDialog(spec: FormSpec, onDismiss: () -> Unit, onSave: (Map<Strin
 private fun HomeTab(data: JSONObject) {
     val d = data.optJSONObject("dashboard") ?: JSONObject()
     LazyColumn(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Panel)) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ArqueirosLogo(Modifier.size(76.dp))
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text("ARQUEIROS E-SPORTS", color = Gold, fontWeight = FontWeight.Black,
+                            style = MaterialTheme.typography.titleMedium)
+                        Text("CENTRAL DE GESTÃO DA EQUIPE", color = Muted,
+                            style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
         item { SectionTitle("PAINEL DA EQUIPE") }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatCard("Jogadores", d.optInt("players"), Modifier.weight(1f)); StatCard("Competições", d.optInt("competitions"), Modifier.weight(1f))
@@ -249,7 +271,15 @@ private fun HomeTab(data: JSONObject) {
                 r.optInt("J").toString() + "J  " + r.optInt("V") + "V  " + r.optInt("E") + "E  " + r.optInt("D") + "D  •  SG " + r.optInt("SG"))
         }
         item { SectionTitle("COMUNICADOS") }
-        items(listOfJson(data.optJSONArray("notices"))) { n -> InfoCard(n.optString("title"), n.optString("body")) }
+        items(listOfJson(data.optJSONArray("notices"))) { n ->
+            Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(13.dp)).padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(n.optString("title"), color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(n.optString("body"), color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
     }
 }
 
@@ -265,16 +295,88 @@ private fun StatCard(label: String, value: Int, modifier: Modifier = Modifier) {
 
 @Composable
 private fun PlayersTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit, onAction: (String, String, JSONObject?) -> Unit) {
-    LazyColumn(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        item { Row(verticalAlignment = Alignment.CenterVertically) { SectionTitle("ELENCO"); Spacer(Modifier.weight(1f)); if (admin) Button(onClick = onAdd, colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("+ JOGADOR") } } }
-        items(listOfJson(data.optJSONArray("players"))) { p ->
-            Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(13.dp)).padding(13.dp)) {
-                Text(p.optString("name"), color = Color.White, fontWeight = FontWeight.Bold)
-                Text(listOf(p.optString("nickname"), p.optString("position"), p.optString("status")).filter { it.isNotBlank() }.joinToString(" • "), color = Muted)
-                if (admin) Row {
-                    TextButton(onClick = { onAction("api/mobile/players/${p.optInt("id")}/status", "PUT", JSONObject().put("status", nextStatus(p.optString("status")))) }) { Text("ALTERAR STATUS", color = Gold) }
+    var selectedPlayer by remember { mutableStateOf<JSONObject?>(null) }
+    val players = listOfJson(data.optJSONArray("players")).filter {
+        val n = it.optString("name").trim().lowercase()
+        n != "cancelar" && n != "❌ cancelar"
+    }
+    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    SectionTitle("ELENCO OFICIAL")
+                    Text("${players.size} integrantes cadastrados", color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+                if (admin) Button(onClick = onAdd, colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("+ JOGADOR") }
+            }
+        }
+        items(players) { p ->
+            val status = p.optString("status", "Ativo")
+            Card(modifier = Modifier.fillMaxWidth().clickable { selectedPlayer = p }, shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Panel),
+                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)) {
+                Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(48.dp).background(Red, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                            Text(p.optString("name").trim().take(1).uppercase(), color = Color.White,
+                                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(p.optString("name"), color = Color.White, fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium)
+                            if (p.optString("nickname").isNotBlank())
+                                Text("@${p.optString("nickname")}", color = Gold, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Surface(color = if (status == "Ativo") Color(0xFF174D38) else Color(0xFF45351D),
+                            shape = RoundedCornerShape(50)) {
+                            Text(status.uppercase(), color = if (status == "Ativo") Color(0xFF8BE0B4) else Gold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    HorizontalDivider(color = Color(0xFF34343E))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (p.optString("position").isNotBlank()) InfoChip("POSIÇÃO", p.optString("position"))
+                        if (p.optString("team").isNotBlank()) InfoChip("EQUIPE", p.optString("team"))
+                    }
+                    if (admin) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Gerenciar situação", color = Muted, style = MaterialTheme.typography.labelSmall)
+                            Spacer(Modifier.weight(1f))
+                            TextButton(onClick = {
+                                onAction("api/mobile/players/${p.optInt("id")}/status", "PUT",
+                                    JSONObject().put("status", nextStatus(status)))
+                            }) { Text("ALTERAR STATUS", color = Gold, fontWeight = FontWeight.Bold) }
+                        }
+                    }
                 }
             }
+        }
+        if (players.isEmpty()) item { InfoCard("Nenhum jogador cadastrado", "Adicione integrantes para montar o elenco.") }
+    }
+    selectedPlayer?.let { p ->
+        val stat = listOfJson(data.optJSONArray("player_ranking")).firstOrNull { it.optInt("player_id") == p.optInt("id") } ?: JSONObject()
+        AlertDialog(onDismissRequest = { selectedPlayer = null }, containerColor = Panel,
+            title = { Text(p.optString("name"), color = Gold, fontWeight = FontWeight.Bold) },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("@"+p.optString("nickname")+" • "+p.optString("position"), color = Muted)
+                Text("JOGOS  "+stat.optInt("games")+"     VITÓRIAS  "+stat.optInt("wins"), color = Color.White)
+                Text("EMPATES  "+stat.optInt("draws")+"     DERROTAS  "+stat.optInt("losses"), color = Color.White)
+                Text("GOLS  "+stat.optInt("goals")+"     ASSISTÊNCIAS  "+stat.optInt("assists"), color = Color.White)
+                Text("PONTOS  "+stat.optInt("points")+"     APROVEITAMENTO  "+stat.optDouble("win_rate")+"%", color = Gold, fontWeight = FontWeight.Bold)
+            } },
+            confirmButton = { TextButton(onClick = { selectedPlayer = null }) { Text("FECHAR", color = Gold) } })
+    }
+}
+
+@Composable
+private fun InfoChip(label: String, value: String) {
+    Surface(color = Color(0xFF25252E), shape = RoundedCornerShape(9.dp)) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
+            Text(label, color = Muted, style = MaterialTheme.typography.labelSmall)
+            Text(value, color = Color.White, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -285,7 +387,21 @@ private fun nextStatus(s: String) = when (s) { "Ativo" -> "Reserva"; "Reserva" -
 private fun CompetitionsTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit, onAction: (String, String, JSONObject?) -> Unit) {
     LazyColumn(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
         item { Row(verticalAlignment = Alignment.CenterVertically) { SectionTitle("COMPETIÇÕES"); Spacer(Modifier.weight(1f)); if (admin) Button(onClick = onAdd, colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("+ COMPETIÇÃO") } } }
-        items(listOfJson(data.optJSONArray("competitions"))) { c -> InfoCard(c.optString("name"), c.optString("kind") + " • " + c.optString("season")) }
+        items(listOfJson(data.optJSONArray("competitions"))) { c ->
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp),
+                colors = CardDefaults.cardColors(containerColor = Panel)) {
+                Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(c.optString("name"), color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(c.optString("kind") + " • " + c.optString("season"), color = Muted,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (admin) TextButton(onClick = {
+                        onAction("api/mobile/competitions/${c.optInt("id")}", "DELETE", null)
+                    }) { Text("EXCLUIR", color = Color(0xFFFF8B8B)) }
+                }
+            }
+        }
     }
 }
 
@@ -326,7 +442,82 @@ private fun MoreTab(data: JSONObject, admin: Boolean, onAdd: (String) -> Unit,
             item { SectionTitle("RECRUTAMENTO") }
             items(listOfJson(data.optJSONArray("recruitment"))) { x -> InfoCard(x.optString("nickname"), x.optString("position") + " • " + x.optString("contact") + " • " + x.optString("status")) }
             item { SectionTitle("USUÁRIOS DO APP") }
-            items(listOfJson(data.optJSONArray("users"))) { x -> InfoCard(x.optString("username"), x.optString("role") + " • " + if (x.optBoolean("active")) "Ativo" else "Bloqueado") }
+            items(listOfJson(data.optJSONArray("users"))) { x ->
+                Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(13.dp)).padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(x.optString("username"), color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(x.optString("role") + " • " + if (x.optBoolean("active")) "Ativo" else "Bloqueado",
+                            color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = {
+                        onAction("api/mobile/users/${x.optInt("id")}/active", "PUT",
+                            JSONObject().put("active", !x.optBoolean("active")))
+                    }) { Text(if (x.optBoolean("active")) "BLOQUEAR" else "ATIVAR",
+                        color = if (x.optBoolean("active")) Color(0xFFFF8B8B) else Gold) }
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun PerformanceTab(data: JSONObject, admin: Boolean, onAdd: (String) -> Unit,
+                           onAction: (String, String, JSONObject?) -> Unit) {
+    val ranking = listOfJson(data.optJSONArray("player_ranking"))
+    val games = listOfJson(data.optJSONArray("player_games"))
+    val fixtures = listOfJson(data.optJSONArray("federation_fixtures"))
+    val mvp = data.optJSONObject("mvp_month")
+    LazyColumn(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        item { SectionTitle("DESEMPENHO DOS JOGADORES") }
+        item {
+            if (mvp != null) Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("👑 MVP DO MÊS", color = Gold, fontWeight = FontWeight.Black)
+                    Text(mvp.optString("name"), color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("${mvp.optInt("points")} pts • ${mvp.optInt("games")} jogos • ${mvp.optInt("wins")} vitórias • ${mvp.optInt("goals")} gols • ${mvp.optInt("assists")} assistências", color = Muted)
+                }
+            } else InfoCard("MVP do mês", "Ainda não há jogos aprovados neste mês.")
+        }
+        item { SectionTitle("RANKING GERAL") }
+        items(ranking) { r ->
+            InfoCard("${r.optInt("player_id")}. ${r.optString("name")} • ${r.optInt("points")} pts",
+                "${r.optInt("games")}J  ${r.optInt("wins")}V  ${r.optInt("draws")}E  ${r.optInt("losses")}D • ${r.optInt("goals")} gols • ${r.optInt("assists")} assist. • ${r.optDouble("win_rate")}%")
+        }
+        if (admin) {
+            item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { onAdd("player_game") }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("+ JOGO PLAYER") }
+                Button(onClick = { onAdd("federation") }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("+ FEDERAÇÃO") }
+            } }
+            item { SectionTitle("JOGOS INDIVIDUAIS • APROVAÇÃO") }
+            items(games) { g ->
+                Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(12.dp)).padding(12.dp)) {
+                    Text(g.optString("player") + " × " + g.optString("opponent"), color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(g.optString("competition") + " • " + g.optInt("goals_for") + "–" + g.optInt("goals_against") + " • " + g.optString("status"), color = Muted)
+                    if (g.optString("status") == "Pendente") Row {
+                        TextButton(onClick = { onAction("api/mobile/player-games/${g.optInt("id")}/approve", "POST", null) }) { Text("APROVAR", color = Gold) }
+                        TextButton(onClick = { onAction("api/mobile/player-games/${g.optInt("id")}/reject", "POST", null) }) { Text("REJEITAR", color = Color(0xFFFF8B8B)) }
+                    }
+                }
+            }
+            item { SectionTitle("CONFRONTOS DE FEDERAÇÃO") }
+            items(fixtures) { f ->
+                Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(12.dp)).padding(12.dp)) {
+                    Text("ARQUEIROS × " + f.optString("opponent"), color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(f.optString("round") + " • " + f.optString("format") + " • " + f.optString("score_for") + "–" + f.optString("score_against") + " • " + f.optString("status"), color = Muted)
+                    if (f.optString("lineup").isNotBlank()) Text("Escalação: " + f.optString("lineup"), color = Muted, style = MaterialTheme.typography.bodySmall)
+                    if (f.optString("status") == "Pendente") Row {
+                        TextButton(onClick = { onAction("api/mobile/federation/${f.optInt("id")}/approve", "POST", null) }) { Text("APROVAR", color = Gold) }
+                        TextButton(onClick = { onAction("api/mobile/federation/${f.optInt("id")}/reject", "POST", null) }) { Text("REJEITAR", color = Color(0xFFFF8B8B)) }
+                    }
+                }
+            }
+        } else {
+            item { SectionTitle("CONFRONTOS DE FEDERAÇÃO") }
+            items(fixtures.filter { it.optString("status") == "Aprovado" }) { f ->
+                InfoCard("ARQUEIROS × " + f.optString("opponent"), f.optString("round") + " • " + f.optString("format") + " • " + f.optString("score_for") + "–" + f.optString("score_against"))
+            }
         }
     }
 }
