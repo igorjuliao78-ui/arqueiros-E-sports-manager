@@ -651,6 +651,16 @@ async def mobile_match_image_preview(request: Request, user=Depends(admin_only),
             matches = [(k, p) for k, p in alias_to_player.items() if k and (k in key or key in k)]
             if matches:
                 player = max(matches, key=lambda item: len(item[0]))[1]
+        if player is None and key:
+            # A small spelling variation should match an existing nickname/name,
+            # but ambiguous OCR must remain a new-player candidate for admin review.
+            import difflib
+            close = difflib.get_close_matches(key, list(alias_to_player.keys()), n=2, cutoff=0.82)
+            if close:
+                best = difflib.SequenceMatcher(None, key, close[0]).ratio()
+                second = difflib.SequenceMatcher(None, key, close[1]).ratio() if len(close) > 1 else 0
+                if best >= 0.82 and best - second >= 0.06:
+                    player = alias_to_player[close[0]]
         stats.append({"player_id": player.id if player else None,
                       "player": player.name if player else row["detected_name"],
                       "detected_name": row["detected_name"],
