@@ -121,6 +121,8 @@ def _player_performance(s, player, month=None, competition_id=None):
     legacy_q = s.query(MatchPlayerStat).join(Match, Match.id == MatchPlayerStat.match_id).filter(
         MatchPlayerStat.player_name == player.name, Match.status == "Aprovado",
         MatchPlayerStat.goals_for.isnot(None), MatchPlayerStat.goals_against.isnot(None))
+    if competition_id is not None:
+        legacy_q = legacy_q.filter(Match.competition_id == int(competition_id))
     if month:
         q = q.filter(PlayerPerformance.period == month[0].strftime("%Y-%m"))
         legacy_q = legacy_q.filter(Match.created_at >= month[0], Match.created_at < month[1])
@@ -539,7 +541,8 @@ def mobile_full_report(user=Depends(admin_only)):
         buf = build_full_report(s)
         from fastapi.responses import StreamingResponse
         return StreamingResponse(buf, media_type="application/pdf",
-                                 headers={"Content-Disposition": "attachment; filename=arqueiros-relatorio-geral.pdf"})
+                                 headers={"Content-Disposition": "attachment; filename=arqueiros-relatorio-geral.pdf",
+                                          "Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"})
     finally:
         s.close()
 
@@ -625,6 +628,8 @@ async def mobile_create_player_game(request: Request, user=Depends(admin_only), 
     if min(gf, ga, goals, assists) < 0:
         raise HTTPException(400, "Estatísticas não podem ser negativas.")
     cid = d.get("competition_id") or None
+    if cid and not s.get(Competition, int(cid)):
+        raise HTTPException(404, "Competição não encontrada.")
     row = PlayerGame(player_id=player_id, opponent=str(d.get("opponent", "")).strip(),
                      competition_id=int(cid) if cid else None, goals_for=gf, goals_against=ga,
                      goals=goals, assists=assists, evidence_url=str(d.get("evidence_url", "")).strip() or None)
@@ -648,8 +653,8 @@ def mobile_player_game_action(gid: int, action: str, user=Depends(admin_only), s
         log(s, "player.game.approve", (p.name if p else str(row.player_id)) + " x " + row.opponent)
         s.delete(row)
     else:
-        row.status = "Rejeitado"
         log(s, "player.game.reject", (p.name if p else str(row.player_id)) + " x " + row.opponent)
+        s.delete(row)
     s.commit()
     return {"ok": True}
 
