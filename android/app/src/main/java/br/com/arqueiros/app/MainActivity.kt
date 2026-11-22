@@ -136,9 +136,7 @@ private fun LoginScreen(busy: Boolean, error: String, onLogin: (String, String) 
     var password by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize().background(Ink).padding(24.dp), verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(92.dp).background(Red, RoundedCornerShape(26.dp)), contentAlignment = Alignment.Center) {
-            Text("➶", color = Color.White, style = MaterialTheme.typography.displayLarge)
-        }
+        ArqueirosLogo(Modifier.fillMaxWidth().height(142.dp))
         Spacer(Modifier.height(18.dp))
         Text("ARQUEIROS", color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
         Text("E-SPORTS • APP OFICIAL", color = Gold)
