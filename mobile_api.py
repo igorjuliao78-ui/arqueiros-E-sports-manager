@@ -698,9 +698,31 @@ async def mobile_match_image_preview(request: Request, user=Depends(admin_only),
     )
     if team_side == "second" and not has_explicit_reverse_header and len(scores) >= 2:
         scores = [scores[1], scores[0]]
+    competition_rows = s.query(Competition).all()
+    detected_competition_name = ""
+    detected_competition_id = None
+    for line in text.splitlines():
+        clean_line = re.sub(r"^[#\\s]+", "", line).strip()
+        if not clean_line:
+            continue
+        if clean_line.lower().startswith("competição:"):
+            clean_line = clean_line.split(":", 1)[1].strip()
+        for comp in competition_rows:
+            comp_key = normalize_name(comp.name)
+            line_key = normalize_name(clean_line)
+            if comp_key and (comp_key == line_key or comp_key in line_key):
+                detected_competition_name = comp.name
+                detected_competition_id = comp.id
+                break
+        if detected_competition_id:
+            break
+        if not detected_competition_name:
+            detected_competition_name = clean_line.lstrip("# ").strip()
     return {"team": parsed.get("team", "Equipe adversária"), "scores": scores,
             "stats": stats, "new_players": list(new_players.values()),
             "pending_players": pending_players,
+            "competition_id": detected_competition_id,
+            "detected_competition_name": detected_competition_name,
             "team_side": team_side, "image_sha256": image_hash,
             "recognized": len(stats),
             "note": "Novos jogadores serão cadastrados somente após a conferência e confirmação do administrador."}
