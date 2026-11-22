@@ -946,3 +946,8 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
   elif cmd=="/ranking":out="\n".join(f"{i}. {r['team']} — {r['PTS']} pts" for i,r in enumerate(d["ranking"],1)) or "Sem resultados aprovados."
   else:out="Comando não reconhecido. Use /help."
  send(chat,out,menu=True);return {"ok":True}
+
+
+# API autenticada usada pelo aplicativo Android nativo.
+from mobile_api import router as mobile_router
+app.include_router(mobile_router)
