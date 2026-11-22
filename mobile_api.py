@@ -105,8 +105,12 @@ def _performance_payload(s):
     monthly_rows.sort(key=lambda x: (-x["points"], -x["goals"], -x["assists"], -x["win_rate"], x["name"]))
     fixtures = s.query(FederationFixture).order_by(FederationFixture.created_at.desc()).limit(100).all()
     competitions = {x.id: x.name for x in s.query(Competition).all()}
+    team_totals = {key: sum(row.get(key, 0) for row in ranking_rows)
+                   for key in ("games", "wins", "draws", "losses", "goals", "assists", "points")}
+    team_totals["win_rate"] = round(team_totals["wins"] * 100 / team_totals["games"], 1) if team_totals["games"] else 0
     return {
         "player_ranking": ranking_rows,
+        "team_player_performance": team_totals,
         "mvp_month": monthly_rows[0] if monthly_rows else None,
         "player_games": [{"id": x.id, "player_id": x.player_id, "player": s.get(Player, x.player_id).name if s.get(Player, x.player_id) else "",
                           "opponent": x.opponent, "competition": competitions.get(x.competition_id, ""),
@@ -497,8 +501,8 @@ async def mobile_create_player_game(request: Request, user=Depends(admin_only), 
         raise HTTPException(400, "Informe jogador e placar válido.")
     player_name = str(d.get("player_name", "")).strip()
     player = s.get(Player, player_id) if player_id else s.query(Player).filter(Player.name.ilike(player_name)).first()
-    if not player:
-        raise HTTPException(404, "Jogador não encontrado. Confira o nome no elenco.")
+    if not player or not player.active:
+        raise HTTPException(404, "Jogador ativo não encontrado. Selecione alguém do elenco.")
     player_id = player.id
     if min(gf, ga, goals, assists) < 0:
         raise HTTPException(400, "Estatísticas não podem ser negativas.")
