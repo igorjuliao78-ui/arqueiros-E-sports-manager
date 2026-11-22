@@ -490,13 +490,16 @@ def mobile_full_report(user=Depends(admin_only)):
 async def mobile_create_player_game(request: Request, user=Depends(admin_only), s: Session = Depends(get_db)):
     d = await request.json()
     try:
-        player_id = int(d.get("player_id"))
+        player_id = int(d.get("player_id")) if d.get("player_id") else None
         gf, ga = int(d.get("goals_for")), int(d.get("goals_against"))
         goals, assists = int(d.get("goals", 0)), int(d.get("assists", 0))
     except (TypeError, ValueError):
         raise HTTPException(400, "Informe jogador e placar válido.")
-    if not s.get(Player, player_id):
-        raise HTTPException(404, "Jogador não encontrado.")
+    player_name = str(d.get("player_name", "")).strip()
+    player = s.get(Player, player_id) if player_id else s.query(Player).filter(Player.name.ilike(player_name)).first()
+    if not player:
+        raise HTTPException(404, "Jogador não encontrado. Confira o nome no elenco.")
+    player_id = player.id
     if min(gf, ga, goals, assists) < 0:
         raise HTTPException(400, "Estatísticas não podem ser negativas.")
     cid = d.get("competition_id") or None
