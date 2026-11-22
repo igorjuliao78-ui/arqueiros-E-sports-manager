@@ -12,6 +12,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import requests
 import pytesseract
+import shutil
+import subprocess
 from PIL import Image
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
@@ -147,6 +149,16 @@ def dashboard(s):
  return {"players":s.query(Player).filter(Player.active.is_(True)).count(),"competitions":s.query(Competition).count(),"approved":s.query(Match).filter(Match.status=="Aprovado").count(),"pending":s.query(Match).filter(Match.status=="Pendente").count(),"titles":s.query(Title).count(),"ranking":ranking(s)}
 @app.get("/health")
 def health(): return {"status":"ok","service":"Arqueiros Manager"}
+@app.get("/api/ocr/health")
+def ocr_health(_:bool=Depends(auth)):
+ executable=shutil.which("tesseract")
+ if not executable:return {"ok":False,"error":"Executável tesseract não encontrado no PATH","executable":None,"languages":[]}
+ try:
+  version=subprocess.run([executable,"--version"],capture_output=True,text=True,timeout=10,check=True).stdout.splitlines()[0]
+  langs=pytesseract.get_languages(config="")
+  return {"ok":bool({"por","eng"}.intersection(langs)),"executable":executable,"version":version,"languages":langs,"required_languages":{"por":"por" in langs,"eng":"eng" in langs}}
+ except Exception as exc:
+  return {"ok":False,"executable":executable,"error":f"{type(exc).__name__}: {exc}"[:300]}
 @app.get("/",response_class=HTMLResponse)
 def home(request:Request,token:str=""):
  if not TOKEN or not secrets.compare_digest(token,TOKEN):
@@ -615,8 +627,9 @@ def process_duel_photo(chat,file_id):
   send(chat,"\n".join(lines),menu=True)
  except Exception as e:
   detail=str(e)
+  print(f"[OCR ERROR] {type(e).__name__}: {detail}",flush=True)
   if "tesseract" in detail.casefold() or "idioma OCR" in detail.casefold():
-   send(chat,"O leitor de imagens não está disponível corretamente no servidor. O administrador precisa aguardar a atualização do serviço.")
+   send(chat,"O leitor de imagens não está disponível corretamente no servidor. O administrador deve verificar /api/ocr/health no painel protegido.")
   else:send(chat,"Falha na leitura da imagem. Tente novamente com o print original e mais nítido. Detalhe: "+detail[:180])
 PLAYER_ADD_STATE={}
 PLAYER_EDIT_STATE={}
