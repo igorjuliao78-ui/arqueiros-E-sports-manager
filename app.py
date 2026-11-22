@@ -316,6 +316,8 @@ def competition_ranking(cid:int,s:Session=Depends(get_db),_:bool=Depends(auth)):
    x["SG"]=x["GP"]-x["GC"]
  return {"competition":c.name,"ranking":sorted(table.values(),key=lambda x:(-x["PTS"],-x["SG"],-x["GP"],x["team"]))}
 def build_full_report(s):
+ from mobile_api import _migrate_approved_player_games, _player_performance
+ _migrate_approved_player_games(s)
  buf=io.BytesIO()
  doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=14*mm,leftMargin=14*mm,topMargin=15*mm,bottomMargin=15*mm,title="Relatorio Geral Arqueiros E-Sports")
  styles=getSampleStyleSheet()
@@ -348,7 +350,7 @@ def build_full_report(s):
  story.append(para("2. ESTATÍSTICAS INDIVIDUAIS","Section"))
  player_rows=[]
  for p in players:
-  m=player_metrics(s,p)
+  m=_player_performance(s,p)
   player_rows.append([p.name,"Ativo" if p.active else "Inativo",m["games"],f'{m["wins"]}-{m["draws"]}-{m["losses"]}',m["goals"],m["conceded"],m["goal_difference"],f'{m["win_rate"]}%'])
  add_table(["Jogador","Status","J","V-E-D","GM","GS","Saldo","Aprov."],player_rows,[37*mm,18*mm,10*mm,20*mm,12*mm,12*mm,14*mm,16*mm])
  story.append(para("3. COMPETIÇÕES E RESULTADOS","Section"))
@@ -385,7 +387,7 @@ def build_full_report(s):
 @app.get("/api/reports/full.pdf")
 def full_report_pdf(s:Session=Depends(get_db),_:bool=Depends(auth)):
  buf=build_full_report(s)
- return StreamingResponse(buf,media_type="application/pdf",headers={"Content-Disposition":'attachment; filename="arqueiros-relatorio-geral.pdf"'})
+ return StreamingResponse(buf,media_type="application/pdf",headers={"Content-Disposition":'attachment; filename="arqueiros-relatorio-geral.pdf"',"Cache-Control":"no-store, no-cache, must-revalidate","Pragma":"no-cache"})
 @app.get("/api/reports/monthly")
 def monthly_report(month:str="",s:Session=Depends(get_db),_:bool=Depends(auth)):
  try: start=datetime.strptime(month or datetime.utcnow().strftime("%Y-%m"),"%Y-%m")

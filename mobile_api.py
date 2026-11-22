@@ -1,4 +1,4 @@
-import base64, hashlib, hmac, json, os, secrets, time
+import base64, hashlib, hmac, json, os, secrets, time, io
 from datetime import datetime
 from typing import Optional
 
@@ -9,7 +9,8 @@ from sqlalchemy.orm import Mapped, mapped_column, Session
 from app import (
     Base, engine, SessionLocal, get_db, TOKEN, Player, Competition, Match,
     MatchPlayerStat, Title, Notice, Discipline, Recruit, Audit, dashboard,
-    player_metrics, ranking, log, match_approval_error
+    player_metrics, ranking, log, match_approval_error,
+    extract_duel_text, parse_duel_ocr, normalize_name
 )
 
 router = APIRouter(prefix="/api/mobile", tags=["Aplicativo Android"])
@@ -62,28 +63,82 @@ class FederationFixture(Base):
 PlayerGame.__table__.create(bind=engine, checkfirst=True)
 FederationFixture.__table__.create(bind=engine, checkfirst=True)
 
+class PlayerPerformance(Base):
+    __tablename__ = "player_performance_totals"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    competition_id: Mapped[int] = mapped_column(Integer, default=0)
+    period: Mapped[str] = mapped_column(String(7), default="")
+    games: Mapped[int] = mapped_column(Integer, default=0)
+    wins: Mapped[int] = mapped_column(Integer, default=0)
+    draws: Mapped[int] = mapped_column(Integer, default=0)
+    losses: Mapped[int] = mapped_column(Integer, default=0)
+    goals: Mapped[int] = mapped_column(Integer, default=0)
+    assists: Mapped[int] = mapped_column(Integer, default=0)
+    conceded: Mapped[int] = mapped_column(Integer, default=0)
 
-def _player_performance(s, player, month=None):
-    # Inclui os jogos individuais novos e os confrontos já registrados pelo bot.
-    q = s.query(PlayerGame).filter(PlayerGame.player_id == player.id, PlayerGame.status == "Aprovado")
+PlayerPerformance.__table__.create(bind=engine, checkfirst=True)
+
+
+def _store_performance(s, player_id, competition_id, goals_for, goals_against, goals, assists, created_at=None):
+    period = (created_at or datetime.utcnow()).strftime("%Y-%m")
+    cid = int(competition_id or 0)
+    row = s.query(PlayerPerformance).filter_by(
+        player_id=player_id, competition_id=cid, period=period
+    ).first()
+    if row is None:
+        row = PlayerPerformance(player_id=player_id, competition_id=cid, period=period)
+        s.add(row)
+    row.games += 1
+    if goals_for > goals_against:
+        row.wins += 1
+    elif goals_for == goals_against:
+        row.draws += 1
+    else:
+        row.losses += 1
+    row.goals += goals
+    row.assists += assists
+    row.conceded += goals_against
+
+
+def _migrate_approved_player_games(s):
+    old_rows = s.query(PlayerGame).filter(PlayerGame.status == "Aprovado").all()
+    if not old_rows:
+        return
+    for row in old_rows:
+        _store_performance(s, row.player_id, row.competition_id, row.goals_for,
+                           row.goals_against, row.goals, row.assists, row.created_at)
+        s.delete(row)
+    s.commit()
+
+
+
+
+def _player_performance(s, player, month=None, competition_id=None):
+    q = s.query(PlayerPerformance).filter(PlayerPerformance.player_id == player.id)
+    if competition_id is not None:
+        q = q.filter(PlayerPerformance.competition_id == int(competition_id))
     legacy_q = s.query(MatchPlayerStat).join(Match, Match.id == MatchPlayerStat.match_id).filter(
         MatchPlayerStat.player_name == player.name, Match.status == "Aprovado",
         MatchPlayerStat.goals_for.isnot(None), MatchPlayerStat.goals_against.isnot(None))
+    if competition_id is not None:
+        legacy_q = legacy_q.filter(Match.competition_id == int(competition_id))
     if month:
-        q = q.filter(PlayerGame.created_at >= month[0], PlayerGame.created_at < month[1])
+        q = q.filter(PlayerPerformance.period == month[0].strftime("%Y-%m"))
         legacy_q = legacy_q.filter(Match.created_at >= month[0], Match.created_at < month[1])
-    games = q.all()
+    rows = q.all()
     legacy = legacy_q.all()
-    all_games = [(x.goals_for, x.goals_against) for x in games] + [(x.goals_for, x.goals_against) for x in legacy]
-    wins = sum(gf > ga for gf, ga in all_games)
-    draws = sum(gf == ga for gf, ga in all_games)
-    losses = len(all_games) - wins - draws
-    goals = sum(x.goals for x in games) + sum(x.goals_for for x in legacy)
-    assists = sum(x.assists for x in games)
-    return {"games": len(all_games), "wins": wins, "draws": draws, "losses": losses,
-            "goals": goals, "assists": assists,
-            "points": wins * 3 + draws,
-            "win_rate": round(wins * 100 / len(all_games), 1) if all_games else 0}
+    games = sum(x.games for x in rows) + len(legacy)
+    wins = sum(x.wins for x in rows) + sum(x.goals_for > x.goals_against for x in legacy)
+    draws = sum(x.draws for x in rows) + sum(x.goals_for == x.goals_against for x in legacy)
+    losses = sum(x.losses for x in rows) + sum(x.goals_for < x.goals_against for x in legacy)
+    goals = sum(x.goals for x in rows) + sum(x.goals_for for x in legacy)
+    conceded = sum(x.conceded for x in rows) + sum(x.goals_against for x in legacy)
+    assists = sum(x.assists for x in rows)
+    return {"games": games, "wins": wins, "draws": draws, "losses": losses,
+            "goals": goals, "conceded": conceded, "goal_difference": goals - conceded,
+            "assists": assists, "points": wins * 3 + draws,
+            "win_rate": round(wins * 100 / games, 1) if games else 0}
 
 
 def _performance_payload(s):
@@ -92,7 +147,7 @@ def _performance_payload(s):
     start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     end = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
     month = (start, end)
-    players = s.query(Player).filter(Player.active.is_(True)).all()
+    players = s.query(Player).all()
     ranking_rows = []
     monthly_rows = []
     for p in players:
@@ -116,7 +171,7 @@ def _performance_payload(s):
                           "opponent": x.opponent, "competition": competitions.get(x.competition_id, ""),
                           "goals_for": x.goals_for, "goals_against": x.goals_against, "goals": x.goals,
                           "assists": x.assists, "status": x.status, "created_at": x.created_at.isoformat(),
-                          "evidence_url": x.evidence_url} for x in s.query(PlayerGame).order_by(PlayerGame.created_at.desc()).limit(100).all()],
+                          "evidence_url": x.evidence_url} for x in s.query(PlayerGame).filter(PlayerGame.status == "Pendente").order_by(PlayerGame.created_at.desc()).limit(100).all()],
         "federation_fixtures": [{"id": x.id, "competition": competitions.get(x.competition_id, ""),
                                  "round": x.round_name, "format": x.match_format, "opponent": x.opponent,
                                  "score_for": x.score_for, "score_against": x.score_against,
@@ -239,6 +294,7 @@ def mobile_me(user=Depends(current_user), s: Session = Depends(get_db)):
 
 @router.get("/bootstrap")
 def mobile_bootstrap(user=Depends(current_user), s: Session = Depends(get_db)):
+    _migrate_approved_player_games(s)
     is_admin = user.get("role") == "admin"
     players = [p for p in s.query(Player).order_by(Player.name).all()
                if (p.name or "").strip().casefold() not in {"cancelar", "❌ cancelar"}]
@@ -288,7 +344,7 @@ def mobile_player_stats(pid: int, competition_id: Optional[int] = None,
     stats["individual_games"] = [{"id": x.id, "opponent": x.opponent, "goals_for": x.goals_for,
         "goals_against": x.goals_against, "goals": x.goals, "assists": x.assists,
         "created_at": x.created_at.isoformat()} for x in rows]
-    stats["performance"] = _player_performance(s, p)
+    stats["performance"] = _player_performance(s, p, competition_id=competition_id)
     return {"player": _player(p), "stats": stats}
 
 
@@ -485,9 +541,74 @@ def mobile_full_report(user=Depends(admin_only)):
         buf = build_full_report(s)
         from fastapi.responses import StreamingResponse
         return StreamingResponse(buf, media_type="application/pdf",
-                                 headers={"Content-Disposition": "attachment; filename=arqueiros-relatorio-geral.pdf"})
+                                 headers={"Content-Disposition": "attachment; filename=arqueiros-relatorio-geral.pdf",
+                                          "Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"})
     finally:
         s.close()
+
+
+
+@router.post("/matches/image/preview")
+async def mobile_match_image_preview(request: Request, user=Depends(admin_only), s: Session = Depends(get_db)):
+    d = await request.json()
+    encoded = str(d.get("image_base64", "")).strip()
+    if encoded.startswith("data:") and "," in encoded:
+        encoded = encoded.split(",", 1)[1]
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+        if not raw or len(raw) > 12 * 1024 * 1024:
+            raise ValueError("Imagem vazia ou maior que 12 MB.")
+        from PIL import Image
+        image = Image.open(io.BytesIO(raw))
+        roster = [p.name for p in s.query(Player).filter(Player.active.is_(True)).all()]
+        text = extract_duel_text(image, roster)
+        parsed = parse_duel_ocr(text, roster)
+    except Exception as exc:
+        raise HTTPException(400, "Não foi possível ler o print: " + str(exc)[:180])
+    known = {normalize_name(p.name): p for p in s.query(Player).filter(Player.active.is_(True)).all()}
+    stats = []
+    for item in parsed["stats"]:
+        key = normalize_name(item["player"])
+        player = known.get(key)
+        if player:
+            stats.append({"player_id": player.id, "player": player.name,
+                          "goals_for": int(item["gf"]), "goals_against": int(item["ga"]),
+                          "opponent": str(item.get("opponent", ""))})
+    if not stats:
+        raise HTTPException(422, "Nenhum jogador do elenco foi reconhecido com placar individual. Confira se o print está legível.")
+    return {"team": parsed["team"], "scores": parsed["scores"], "stats": stats,
+            "recognized": len(stats), "note": "A imagem foi processada em memória e não será armazenada."}
+
+
+@router.post("/matches/image/confirm")
+async def mobile_match_image_confirm(request: Request, user=Depends(admin_only), s: Session = Depends(get_db)):
+    d = await request.json()
+    team = str(d.get("team", "Equipe adversária")).strip() or "Equipe adversária"
+    scores = d.get("scores") or []
+    hs = int(scores[0]) if len(scores) > 0 and scores[0] is not None else None
+    aw = int(scores[1]) if len(scores) > 1 and scores[1] is not None else None
+    cid = d.get("competition_id") or None
+    if cid and not s.get(Competition, int(cid)):
+        raise HTTPException(404, "Competição não encontrada.")
+    stats = d.get("stats") or []
+    if not stats:
+        raise HTTPException(400, "Nenhum jogador reconhecido para registrar.")
+    match = Match(competition_id=int(cid) if cid else None, home="ARQUEIROS E-SPORTS",
+                  away=team, home_score=hs, away_score=aw, status="Pendente")
+    s.add(match)
+    s.flush()
+    for item in stats:
+        player = s.get(Player, int(item.get("player_id", 0)))
+        if not player or not player.active:
+            raise HTTPException(400, "Um dos jogadores reconhecidos não está mais ativo.")
+        gf, ga = int(item["goals_for"]), int(item["goals_against"])
+        if gf < 0 or ga < 0:
+            raise HTTPException(400, "Placar individual inválido.")
+        s.add(MatchPlayerStat(match_id=match.id, player_name=player.name,
+                              opponent_name=str(item.get("opponent", "")), goals_for=gf, goals_against=ga))
+    log(s, "duel.ocr.mobile.pending", f"#{match.id} — {team}")
+    s.commit()
+    return {"ok": True, "id": match.id, "status": match.status}
 
 
 @router.post("/player-games")
@@ -507,6 +628,8 @@ async def mobile_create_player_game(request: Request, user=Depends(admin_only), 
     if min(gf, ga, goals, assists) < 0:
         raise HTTPException(400, "Estatísticas não podem ser negativas.")
     cid = d.get("competition_id") or None
+    if cid and not s.get(Competition, int(cid)):
+        raise HTTPException(404, "Competição não encontrada.")
     row = PlayerGame(player_id=player_id, opponent=str(d.get("opponent", "")).strip(),
                      competition_id=int(cid) if cid else None, goals_for=gf, goals_against=ga,
                      goals=goals, assists=assists, evidence_url=str(d.get("evidence_url", "")).strip() or None)
@@ -523,9 +646,15 @@ def mobile_player_game_action(gid: int, action: str, user=Depends(admin_only), s
         raise HTTPException(404, "Jogo não encontrado.")
     if row.status != "Pendente":
         raise HTTPException(400, "Este jogo já foi analisado.")
-    row.status = "Aprovado" if action == "approve" else "Rejeitado"
     p = s.get(Player, row.player_id)
-    log(s, "player.game." + action, (p.name if p else str(row.player_id)) + " x " + row.opponent)
+    if action == "approve":
+        _store_performance(s, row.player_id, row.competition_id, row.goals_for,
+                           row.goals_against, row.goals, row.assists, row.created_at)
+        log(s, "player.game.approve", (p.name if p else str(row.player_id)) + " x " + row.opponent)
+        s.delete(row)
+    else:
+        log(s, "player.game.reject", (p.name if p else str(row.player_id)) + " x " + row.opponent)
+        s.delete(row)
     s.commit()
     return {"ok": True}
 

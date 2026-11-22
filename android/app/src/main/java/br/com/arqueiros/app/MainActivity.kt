@@ -7,6 +7,9 @@ import android.os.Bundle
 import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.util.Base64
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -159,6 +162,7 @@ private fun MainScreen(data: JSONObject, user: JSONObject, token: String, busy: 
                        onRefresh: () -> Unit, onLogout: () -> Unit, onAction: (String, String, JSONObject?) -> Unit) {
     var tab by remember { mutableIntStateOf(0) }
     var form by remember { mutableStateOf<String?>(null) }
+    var competitionForGame by remember { mutableStateOf("") }
     val admin = user.optString("role") == "admin"
     val context = LocalContext.current
     Scaffold(containerColor = Ink, topBar = {
@@ -187,15 +191,15 @@ private fun MainScreen(data: JSONObject, user: JSONObject, token: String, busy: 
             when (tab) {
                 0 -> HomeTab(data)
                 1 -> PlayersTab(data, admin, { form = "player" }, onAction)
-                2 -> CompetitionsTab(data, admin, { form = "competition" }, onAction)
-                3 -> MatchesTab(data, admin, onAction)
+                2 -> CompetitionsTab(data, admin, { form = "competition" }, onAction) { cid -> competitionForGame = cid.toString(); form = "player_game" }
+                3 -> MatchesTab(data, admin, token, onRefresh, onAction)
                 4 -> PerformanceTab(data, admin, { form = it }, onAction)
                 else -> MoreTab(data, admin, { form = it }, onAction) {
                     val request = DownloadManager.Request(Uri.parse(BuildConfig.API_BASE_URL.trimEnd('/') + "/api/mobile/reports/full.pdf"))
                         .addRequestHeader("Authorization", "Bearer $token")
                         .setTitle("Relatório geral Arqueiros").setDescription("Baixando relatório PDF")
                         .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "arqueiros-relatorio-geral.pdf")
+                        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "arqueiros-relatorio-geral-${System.currentTimeMillis()}.pdf")
                     (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
                 }
             }
@@ -215,8 +219,11 @@ private fun MainScreen(data: JSONObject, user: JSONObject, token: String, busy: 
             "user" -> FormSpec("Criar acesso", listOf("username" to "Usuário", "password" to "Senha (mín. 8)", "role" to "member ou admin", "player_id" to "ID jogador opcional"), "api/mobile/users")
             else -> null
         }
-        if (spec != null) FormDialog(spec, players = listOfJson(data.optJSONArray("players")), onDismiss = { form = null }) { values ->
-            onAction(spec.path, "POST", bodyOf(values)); form = null
+        if (spec != null) FormDialog(spec, players = listOfJson(data.optJSONArray("players")),
+            competitions = listOfJson(data.optJSONArray("competitions")),
+            initialValues = if (type == "player_game") mapOf("competition_id" to competitionForGame) else emptyMap(),
+            onDismiss = { form = null }) { values ->
+            onAction(spec.path, "POST", bodyOf(values)); form = null; competitionForGame = ""
         } else form = null
     }
 }
@@ -224,8 +231,12 @@ private fun MainScreen(data: JSONObject, user: JSONObject, token: String, busy: 
 private data class FormSpec(val title: String, val fields: List<Pair<String, String>>, val path: String)
 
 @Composable
-private fun FormDialog(spec: FormSpec, players: List<JSONObject> = emptyList(), onDismiss: () -> Unit, onSave: (Map<String, String>) -> Unit) {
-    val values = remember(spec) { mutableStateMapOf<String, String>().apply { spec.fields.forEach { put(it.first, "") } } }
+private fun FormDialog(spec: FormSpec, players: List<JSONObject> = emptyList(),
+                       competitions: List<JSONObject> = emptyList(), initialValues: Map<String, String> = emptyMap(),
+                       onDismiss: () -> Unit, onSave: (Map<String, String>) -> Unit) {
+    val values = remember(spec, initialValues) { mutableStateMapOf<String, String>().apply {
+        spec.fields.forEach { put(it.first, initialValues[it.first] ?: "") }
+    } }
     var playerSearch by remember(spec) { mutableStateOf("") }
     val selectedPlayer = players.firstOrNull { it.optInt("id").toString() == values["player_id"] }
     val filteredPlayers = players.filter { p ->
@@ -235,7 +246,22 @@ private fun FormDialog(spec: FormSpec, players: List<JSONObject> = emptyList(), 
         title = { Text(spec.title, color = Color.White) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.heightIn(max = 470.dp)) {
             spec.fields.forEach { (key, label) ->
-                if (key == "player_id") {
+                if (key == "competition_id") {
+                    val selectedCompetition = competitions.firstOrNull { it.optInt("id").toString() == values["competition_id"] }
+                    Text(label, color = Gold, fontWeight = FontWeight.Bold)
+                    Text(selectedCompetition?.optString("name") ?: "Selecione uma competição", color = Color.White)
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 140.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        items(competitions) { c ->
+                            val selected = values["competition_id"] == c.optInt("id").toString()
+                            TextButton(onClick = { values["competition_id"] = c.optInt("id").toString() },
+                                modifier = Modifier.fillMaxWidth()) {
+                                Text((if (selected) "✓ " else "") + c.optString("name"),
+                                    color = if (selected) Gold else Color.White)
+                            }
+                        }
+                        if (competitions.isEmpty()) item { Text("Cadastre uma competição primeiro.", color = Muted) }
+                    }
+                } else if (key == "player_id") {
                     Text(label, color = Gold, fontWeight = FontWeight.Bold)
                     OutlinedTextField(playerSearch, { playerSearch = it }, label = { Text("Pesquisar jogador pelo nome") },
                         modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -264,7 +290,8 @@ private fun FormDialog(spec: FormSpec, players: List<JSONObject> = emptyList(), 
                 }
             }
         } },
-        confirmButton = { TextButton(onClick = { onSave(values.toMap()) }, enabled = spec.fields.none { it.first == "player_id" } || !values["player_id"].isNullOrBlank()) { Text("SALVAR", color = Gold) } },
+        confirmButton = { TextButton(onClick = { onSave(values.toMap()) }, enabled = (spec.fields.none { it.first == "player_id" } || !values["player_id"].isNullOrBlank()) &&
+                (spec.title != "Lançar jogo de jogador" || !values["competition_id"].isNullOrBlank())) { Text("SALVAR", color = Gold) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("CANCELAR", color = Muted) } })
 }
 
@@ -327,7 +354,7 @@ private fun PlayersTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit, onAc
     var selectedPlayer by remember { mutableStateOf<JSONObject?>(null) }
     val players = listOfJson(data.optJSONArray("players")).filter {
         val n = it.optString("name").trim().lowercase()
-        n != "cancelar" && n != "❌ cancelar"
+        it.optBoolean("active", true) && n != "cancelar" && n != "❌ cancelar"
     }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -396,7 +423,14 @@ private fun PlayersTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit, onAc
                 Text("GOLS  "+stat.optInt("goals")+"     ASSISTÊNCIAS  "+stat.optInt("assists"), color = Color.White)
                 Text("PONTOS  "+stat.optInt("points")+"     APROVEITAMENTO  "+stat.optDouble("win_rate")+"%", color = Gold, fontWeight = FontWeight.Bold)
             } },
-            confirmButton = { TextButton(onClick = { selectedPlayer = null }) { Text("FECHAR", color = Gold) } })
+            confirmButton = { Row {
+                if (admin) TextButton(onClick = {
+                    onAction("api/mobile/players/${p.optInt("id")}/status", "PUT",
+                        JSONObject().put("status", "Desligado"))
+                    selectedPlayer = null
+                }) { Text("EXCLUIR JOGADOR", color = Color(0xFFFF8B8B)) }
+                TextButton(onClick = { selectedPlayer = null }) { Text("FECHAR", color = Gold) }
+            } })
     }
 }
 
@@ -413,21 +447,24 @@ private fun InfoChip(label: String, value: String) {
 private fun nextStatus(s: String) = when (s) { "Ativo" -> "Reserva"; "Reserva" -> "Afastado"; "Afastado" -> "Desligado"; else -> "Ativo" }
 
 @Composable
-private fun CompetitionsTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit, onAction: (String, String, JSONObject?) -> Unit) {
+private fun CompetitionsTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit,
+                            onAction: (String, String, JSONObject?) -> Unit, onRegisterGame: (Int) -> Unit) {
     LazyColumn(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
         item { Row(verticalAlignment = Alignment.CenterVertically) { SectionTitle("COMPETIÇÕES"); Spacer(Modifier.weight(1f)); if (admin) Button(onClick = onAdd, colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("+ COMPETIÇÃO") } } }
         items(listOfJson(data.optJSONArray("competitions"))) { c ->
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp),
+            Card(modifier = Modifier.fillMaxWidth().clickable { if (admin) onRegisterGame(c.optInt("id")) }, shape = RoundedCornerShape(15.dp),
                 colors = CardDefaults.cardColors(containerColor = Panel)) {
-                Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(c.optString("name"), color = Color.White, fontWeight = FontWeight.Bold)
-                        Text(c.optString("kind") + " • " + c.optString("season"), color = Muted,
-                            style = MaterialTheme.typography.bodySmall)
+                Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(c.optString("name"), color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(c.optString("kind") + " • " + c.optString("season"), color = Muted,
+                        style = MaterialTheme.typography.bodySmall)
+                    if (admin) Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { onRegisterGame(c.optInt("id")) }) { Text("REGISTRAR JOGO NESTA COMPETIÇÃO", color = Gold) }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = {
+                            onAction("api/mobile/competitions/${c.optInt("id")}", "DELETE", null)
+                        }) { Text("EXCLUIR", color = Color(0xFFFF8B8B)) }
                     }
-                    if (admin) TextButton(onClick = {
-                        onAction("api/mobile/competitions/${c.optInt("id")}", "DELETE", null)
-                    }) { Text("EXCLUIR", color = Color(0xFFFF8B8B)) }
                 }
             }
         }
@@ -435,9 +472,41 @@ private fun CompetitionsTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit,
 }
 
 @Composable
-private fun MatchesTab(data: JSONObject, admin: Boolean, onAction: (String, String, JSONObject?) -> Unit) {
+private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
+                       onRefresh: () -> Unit, onAction: (String, String, JSONObject?) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var preview by remember { mutableStateOf<JSONObject?>(null) }
+    var localError by remember { mutableStateOf("") }
+    var competitionId by remember { mutableStateOf("") }
+    var competitionMenu by remember { mutableStateOf(false) }
+    val competitions = listOfJson(data.optJSONArray("competitions"))
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) scope.launch {
+            try {
+                localError = ""
+                val bytes = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw IOException("Não foi possível abrir a imagem.")
+                }
+                if (bytes.size > 12 * 1024 * 1024) throw IOException("A imagem deve ter até 12 MB.")
+                val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                preview = api("api/mobile/matches/image/preview", "POST", token,
+                    JSONObject().put("image_base64", encoded))
+                competitionId = ""
+            } catch (e: Exception) { localError = e.message ?: "Falha ao analisar a imagem." }
+        }
+    }
     LazyColumn(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        item { SectionTitle("CONFRONTOS E RESULTADOS") }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SectionTitle("CONFRONTOS E RESULTADOS")
+                Spacer(Modifier.weight(1f))
+                if (admin) Button(onClick = { picker.launch("image/*") },
+                    colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("LER PRINT") }
+            }
+        }
+        if (localError.isNotBlank()) item { Text(localError, color = Color(0xFFFF8B8B)) }
         items(listOfJson(data.optJSONArray("matches"))) { m ->
             Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(13.dp)).padding(13.dp)) {
                 Text(m.optString("home") + "  " + m.opt("home_score") + " × " + m.opt("away_score") + "  " + m.optString("away"), color = Color.White, fontWeight = FontWeight.Bold)
@@ -448,6 +517,49 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, onAction: (String, Stri
                 }
             }
         }
+    }
+    preview?.let { result ->
+        val scoreArray = result.optJSONArray("scores") ?: JSONArray()
+        val playerRows = listOfJson(result.optJSONArray("stats"))
+        val selectedComp = competitions.firstOrNull { it.optInt("id").toString() == competitionId }
+        AlertDialog(onDismissRequest = { preview = null }, containerColor = Panel,
+            title = { Text("CONFERIR LEITURA DO PRINT", color = Gold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.heightIn(max = 420.dp)) {
+                    Text("Adversário: ${result.optString("team")}", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Placar dos clãs: ${if (scoreArray.length() > 0) scoreArray.opt(0) else "?"} × ${if (scoreArray.length() > 1) scoreArray.opt(1) else "?"}", color = Color.White)
+                    Text("Jogadores reconhecidos: ${playerRows.size}", color = Gold)
+                    playerRows.forEach { p ->
+                        Text("${p.optString("player")} — ${p.optInt("goals_for")} × ${p.optInt("goals_against")}", color = Color.White)
+                    }
+                    if (competitions.isNotEmpty()) {
+                        Box {
+                            OutlinedButton(onClick = { competitionMenu = true }) {
+                                Text(selectedComp?.optString("name") ?: "Vincular competição obrigatória")
+                            }
+                            DropdownMenu(expanded = competitionMenu, onDismissRequest = { competitionMenu = false }) {
+                                competitions.forEach { comp ->
+                                    DropdownMenuItem(text = { Text(comp.optString("name")) }, onClick = {
+                                        competitionId = comp.optInt("id").toString(); competitionMenu = false
+                                    })
+                                }
+                            }
+                        }
+                    }
+                    Text("A imagem não será salva no aplicativo. Somente os dados confirmados serão registrados.", color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = { TextButton(onClick = {
+                scope.launch {
+                    try {
+                        result.put("competition_id", competitionId.toIntOrNull() ?: 0)
+                        api("api/mobile/matches/image/confirm", "POST", token, result)
+                        preview = null
+                        onRefresh()
+                    } catch (e: Exception) { localError = e.message ?: "Falha ao registrar os dados." }
+                }
+            }, enabled = competitionId.isNotBlank()) { Text("CONFIRMAR REGISTRO", color = Gold) } },
+            dismissButton = { TextButton(onClick = { preview = null }) { Text("CANCELAR", color = Muted) } })
     }
 }
 
