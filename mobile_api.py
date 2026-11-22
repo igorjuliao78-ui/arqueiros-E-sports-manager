@@ -63,6 +63,24 @@ class FederationFixture(Base):
 PlayerGame.__table__.create(bind=engine, checkfirst=True)
 FederationFixture.__table__.create(bind=engine, checkfirst=True)
 
+class PlayerAlias(Base):
+    __tablename__ = "player_aliases"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    alias: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+
+
+class MobileImportFingerprint(Base):
+    __tablename__ = "mobile_import_fingerprints"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    image_sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"))
+
+
+PlayerAlias.__table__.create(bind=engine, checkfirst=True)
+MobileImportFingerprint.__table__.create(bind=engine, checkfirst=True)
+
+
 class PlayerPerformance(Base):
     __tablename__ = "player_performance_totals"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -553,10 +571,32 @@ def mobile_full_report(user=Depends(admin_only)):
 
 
 
+def _parse_mobile_print_rows(text: str, team_side: str):
+    import re
+    rows = []
+    for line in text.splitlines():
+        line = re.sub(r"\\s+", " ", line).strip()
+        duel = re.match(r"^\\s*(?:\\d+\\s*[.)➤>»:-]?\\s*)?(.+?)\\s+(\\d+)\\s*[x×]\\s*(\\d+)(?:\\s+(.+))?$", line, re.I)
+        if not duel:
+            continue
+        left = duel.group(1).strip(" •➤».-:")
+        right = (duel.group(4) or "").strip(" •➤».-:")
+        player_name, opponent = (left, right) if team_side == "first" else (right, left)
+        if not player_name:
+            continue
+        rows.append({"detected_name": player_name, "opponent": opponent,
+                     "goals_for": int(duel.group(2)) if team_side == "first" else int(duel.group(3)),
+                     "goals_against": int(duel.group(3)) if team_side == "first" else int(duel.group(2))})
+    return rows
+
+
 @router.post("/matches/image/preview")
 async def mobile_match_image_preview(request: Request, user=Depends(admin_only), s: Session = Depends(get_db)):
     d = await request.json()
     encoded = str(d.get("image_base64", "")).strip()
+    team_side = str(d.get("team_side", "first")).strip().lower()
+    if team_side not in ("first", "second"):
+        raise HTTPException(400, "Informe se a Arqueiros aparece primeiro ou segundo nos confrontos.")
     if encoded.startswith("data:") and "," in encoded:
         encoded = encoded.split(",", 1)[1]
     try:
@@ -565,24 +605,48 @@ async def mobile_match_image_preview(request: Request, user=Depends(admin_only),
             raise ValueError("Imagem vazia ou maior que 12 MB.")
         from PIL import Image
         image = Image.open(io.BytesIO(raw))
-        roster = [p.name for p in s.query(Player).filter(Player.active.is_(True)).all()]
+        image_hash = hashlib.sha256(raw).hexdigest()
+        players = s.query(Player).all()
+        aliases = s.query(PlayerAlias).all()
+        alias_to_player = {normalize_name(p.name): p for p in players}
+        alias_to_player.update({normalize_name(p.nickname): p for p in players if p.nickname})
+        for alias in aliases:
+            player = s.get(Player, alias.player_id)
+            if player:
+                alias_to_player[normalize_name(alias.alias)] = player
+        roster = list({key for key in alias_to_player if key})
         text = extract_duel_text(image, roster)
         parsed = parse_duel_ocr(text, roster)
+        raw_rows = _parse_mobile_print_rows(text, team_side)
     except Exception as exc:
         raise HTTPException(400, "Não foi possível ler o print: " + str(exc)[:180])
-    known = {normalize_name(p.name): p for p in s.query(Player).filter(Player.active.is_(True)).all()}
     stats = []
-    for item in parsed["stats"]:
-        key = normalize_name(item["player"])
-        player = known.get(key)
-        if player:
-            stats.append({"player_id": player.id, "player": player.name,
-                          "goals_for": int(item["gf"]), "goals_against": int(item["ga"]),
-                          "opponent": str(item.get("opponent", ""))})
+    new_players = {}
+    for row in raw_rows:
+        key = normalize_name(row["detected_name"])
+        player = alias_to_player.get(key)
+        if player is None:
+            matches = [(k, p) for k, p in alias_to_player.items() if k and (k in key or key in k)]
+            if matches:
+                player = max(matches, key=lambda item: len(item[0]))[1]
+        stats.append({"player_id": player.id if player else None,
+                      "player": player.name if player else row["detected_name"],
+                      "detected_name": row["detected_name"],
+                      "is_new_player": player is None,
+                      "goals_for": row["goals_for"], "goals_against": row["goals_against"],
+                      "opponent": row["opponent"]})
+        if player is None:
+            new_players[normalize_name(row["detected_name"])] = row["detected_name"]
     if not stats:
-        raise HTTPException(422, "Nenhum jogador do elenco foi reconhecido com placar individual. Confira se o print está legível.")
-    return {"team": parsed["team"], "scores": parsed["scores"], "stats": stats,
-            "recognized": len(stats), "note": "A imagem foi processada em memória e não será armazenada."}
+        raise HTTPException(422, "Não encontrei linhas de confronto com placares individuais. Confira se o print está completo e legível.")
+    scores = parsed.get("scores") or []
+    if team_side == "second" and len(scores) >= 2:
+        scores = [scores[1], scores[0]]
+    return {"team": parsed.get("team", "Equipe adversária"), "scores": scores,
+            "stats": stats, "new_players": list(new_players.values()),
+            "team_side": team_side, "image_sha256": image_hash,
+            "recognized": len(stats),
+            "note": "Novos jogadores serão cadastrados somente após a conferência e confirmação do administrador."}
 
 
 @router.post("/matches/image/confirm")
@@ -595,25 +659,51 @@ async def mobile_match_image_confirm(request: Request, user=Depends(admin_only),
     cid = d.get("competition_id") or None
     if cid and not s.get(Competition, int(cid)):
         raise HTTPException(404, "Competição não encontrada.")
+    image_hash = str(d.get("image_sha256", "")).strip()
+    if image_hash:
+        duplicate = s.query(MobileImportFingerprint).filter_by(image_sha256=image_hash).first()
+        if duplicate:
+            return {"ok": True, "duplicate": True, "id": duplicate.match_id,
+                    "status": "Já importado; nenhum registro duplicado foi criado."}
     stats = d.get("stats") or []
     if not stats:
         raise HTTPException(400, "Nenhum jogador reconhecido para registrar.")
+    team_side = str(d.get("team_side", "first")).lower()
+    if team_side not in ("first", "second"):
+        raise HTTPException(400, "Lado da Arqueiros inválido.")
     match = Match(competition_id=int(cid) if cid else None, home="ARQUEIROS E-SPORTS",
                   away=team, home_score=hs, away_score=aw, status="Pendente")
     s.add(match)
     s.flush()
     for item in stats:
-        player = s.get(Player, int(item.get("player_id", 0)))
-        if not player or not player.active:
-            raise HTTPException(400, "Um dos jogadores reconhecidos não está mais ativo.")
+        player_id = item.get("player_id")
+        detected_name = str(item.get("detected_name") or item.get("player") or "").strip()
+        player = s.get(Player, int(player_id)) if player_id else None
+        if player is None:
+            if not bool(item.get("is_new_player")) or not detected_name:
+                raise HTTPException(400, "Jogador não reconhecido. Associe a um cadastro existente ou confirme um novo jogador.")
+            existing = s.query(Player).filter(Player.name.ilike(detected_name)).first()
+            player = existing or Player(name=detected_name, nickname=detected_name, status="Ativo", active=True)
+            if existing is None:
+                s.add(player)
+                s.flush()
+                log(s, "player.created.from_match_print", detected_name)
         gf, ga = int(item["goals_for"]), int(item["goals_against"])
         if gf < 0 or ga < 0:
             raise HTTPException(400, "Placar individual inválido.")
+        # Save the OCR spelling as an alias when it differs from the canonical player name.
+        if normalize_name(detected_name) and normalize_name(detected_name) != normalize_name(player.name):
+            alias = s.query(PlayerAlias).filter_by(alias=detected_name).first()
+            if alias is None:
+                s.add(PlayerAlias(player_id=player.id, alias=detected_name))
         s.add(MatchPlayerStat(match_id=match.id, player_name=player.name,
                               opponent_name=str(item.get("opponent", "")), goals_for=gf, goals_against=ga))
+    if image_hash:
+        s.add(MobileImportFingerprint(image_sha256=image_hash, match_id=match.id))
     log(s, "duel.ocr.mobile.pending", f"#{match.id} — {team}")
     s.commit()
-    return {"ok": True, "id": match.id, "status": match.status}
+    return {"ok": True, "id": match.id, "status": match.status,
+            "players_registered": sum(1 for item in stats if item.get("is_new_player"))}
 
 
 @router.post("/player-games")
