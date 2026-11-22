@@ -590,7 +590,11 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
             title = { Text("CONFERIR LEITURA DO PRINT", color = Gold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.heightIn(max = 420.dp)) {
-                    Text("Adversário: ${result.optString("team")}", color = Color.White, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(
+                        value = result.optString("team"),
+                        onValueChange = { value -> result.put("team", value); previewRevision++ },
+                        label = { Text("Equipe adversária") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+                    )
                     Text("Corrija o placar geral, se necessário:", color = Muted, style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
