@@ -611,9 +611,10 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
                                 OutlinedTextField(
                                     value = p.optString("detected_name", p.optString("player")),
                                     onValueChange = { value ->
+                                        val canonicalName = p.optString("player").trim()
                                         p.put("detected_name", value)
                                         p.put("player", value)
-                                        if (value.trim() != p.optString("player").trim()) {
+                                        if (value.trim() != canonicalName) {
                                             p.put("player_id", JSONObject.NULL)
                                             p.put("is_new_player", true)
                                         }
