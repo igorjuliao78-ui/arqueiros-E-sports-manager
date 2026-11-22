@@ -75,6 +75,7 @@ class PlayerPerformance(Base):
     losses: Mapped[int] = mapped_column(Integer, default=0)
     goals: Mapped[int] = mapped_column(Integer, default=0)
     assists: Mapped[int] = mapped_column(Integer, default=0)
+    conceded: Mapped[int] = mapped_column(Integer, default=0)
 
 PlayerPerformance.__table__.create(bind=engine, checkfirst=True)
 
@@ -97,6 +98,7 @@ def _store_performance(s, player_id, competition_id, goals_for, goals_against, g
         row.losses += 1
     row.goals += goals
     row.assists += assists
+    row.conceded += goals_against
 
 
 def _migrate_approved_player_games(s):
@@ -112,8 +114,10 @@ def _migrate_approved_player_games(s):
 
 
 
-def _player_performance(s, player, month=None):
+def _player_performance(s, player, month=None, competition_id=None):
     q = s.query(PlayerPerformance).filter(PlayerPerformance.player_id == player.id)
+    if competition_id is not None:
+        q = q.filter(PlayerPerformance.competition_id == int(competition_id))
     legacy_q = s.query(MatchPlayerStat).join(Match, Match.id == MatchPlayerStat.match_id).filter(
         MatchPlayerStat.player_name == player.name, Match.status == "Aprovado",
         MatchPlayerStat.goals_for.isnot(None), MatchPlayerStat.goals_against.isnot(None))
@@ -127,9 +131,11 @@ def _player_performance(s, player, month=None):
     draws = sum(x.draws for x in rows) + sum(x.goals_for == x.goals_against for x in legacy)
     losses = sum(x.losses for x in rows) + sum(x.goals_for < x.goals_against for x in legacy)
     goals = sum(x.goals for x in rows) + sum(x.goals_for for x in legacy)
+    conceded = sum(x.conceded for x in rows) + sum(x.goals_against for x in legacy)
     assists = sum(x.assists for x in rows)
     return {"games": games, "wins": wins, "draws": draws, "losses": losses,
-            "goals": goals, "assists": assists, "points": wins * 3 + draws,
+            "goals": goals, "conceded": conceded, "goal_difference": goals - conceded,
+            "assists": assists, "points": wins * 3 + draws,
             "win_rate": round(wins * 100 / games, 1) if games else 0}
 
 
@@ -336,7 +342,7 @@ def mobile_player_stats(pid: int, competition_id: Optional[int] = None,
     stats["individual_games"] = [{"id": x.id, "opponent": x.opponent, "goals_for": x.goals_for,
         "goals_against": x.goals_against, "goals": x.goals, "assists": x.assists,
         "created_at": x.created_at.isoformat()} for x in rows]
-    stats["performance"] = _player_performance(s, p)
+    stats["performance"] = _player_performance(s, p, competition_id=competition_id)
     return {"player": _player(p), "stats": stats}
 
 
