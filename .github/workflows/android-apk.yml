@@ -1,6 +1,13 @@
 name: Build Arqueiros Android APK
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "android/**"
+      - "mobile_api.py"
+      - "app.py"
+      - ".github/workflows/android-apk.yml"
   push:
     branches: [feature/android-native-app]
     paths:
