@@ -543,13 +543,14 @@ def parse_duel_ocr(text,roster_names=None):
   clan=re.search(r"CL[ÃA]O?\s*:?\s*(\d*)\s*$",line,re.I)
   if clan:scores.append(int(clan.group(1)) if clan.group(1) else None)
   tag=re.search(r"\bAQR\b\s*[x×]\s*([^\s|]+)",line,re.I)
+  full_home=re.search(r"\bARQUEIROS\s+E-SPORTS\s*[x×]\s*(.+)$",line,re.I)
+  full_away=re.search(r"^(.+?)\s*[x×]\s*\bARQUEIROS\s+E-SPORTS\b",line,re.I)
   if tag:team=tag.group(1).strip(".,:;");aqr_side=0
+  elif full_home:team=full_home.group(1).strip(".,:;");aqr_side=0
+  elif full_away:team=full_away.group(1).strip(".,:;");aqr_side=1
   else:
    reverse=re.search(r"([^\s|]+)\s*[x×]\s*\bAQR\b",line,re.I)
    if reverse:team=reverse.group(1).strip(".,:;");aqr_side=1
-   else:
-    fallback=re.search(r"ARQUEIROS\s+E-SPORTS\s*[x×]\s*(.+)",line,re.I)
-    if fallback and team=="Equipe adversária":team=fallback.group(1).strip()
   duel=re.match(r"^\s*(?:\d+\s*[.)➤>»:-]?\s*)?(.+?)\s+(\d+)\s*[x×]\s*(\d+)(?:\s+(.+))?$",line,re.I)
   if not duel:continue
   left=duel.group(1).strip(" •➤».-:");right=(duel.group(4) or "").strip(" •➤».-:")

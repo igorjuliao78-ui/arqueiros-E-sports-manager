@@ -37,7 +37,7 @@ import java.net.URL
 private val Ink = Color(0xFF0B0B10)
 private val Panel = Color(0xFF191920)
 private val Red = Color(0xFFB51F2B)
-private val Gold = Color(0xFFD6B15E)
+private val Gold = Color(0xFFD6D6D6)
 private val Muted = Color(0xFFB8B8C2)
 
 class MainActivity : ComponentActivity() {
@@ -321,6 +321,18 @@ private fun HomeTab(data: JSONObject) {
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatCard("Aprovados", d.optInt("approved"), Modifier.weight(1f)); StatCard("Pendentes", d.optInt("pending"), Modifier.weight(1f)); StatCard("Títulos", d.optInt("titles"), Modifier.weight(1f))
         } }
+        item {
+            val team = data.optJSONObject("team_player_performance") ?: JSONObject()
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("DESEMPENHO GERAL DA EQUIPE", color = Gold, fontWeight = FontWeight.Black)
+                    Text("${team.optInt("games")} confrontos • ${team.optInt("wins")}V ${team.optInt("draws")}E ${team.optInt("losses")}D",
+                        color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("${team.optDouble("win_rate")}% de aproveitamento • saldo ${team.optInt("goal_difference")}",
+                        color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
         item { SectionTitle("CLASSIFICAÇÃO") }
         items(listOfJson(data.optJSONArray("rankings"))) { r ->
             InfoCard(r.optString("team") + " • " + r.optInt("PTS") + " pts",
@@ -352,9 +364,20 @@ private fun StatCard(label: String, value: Int, modifier: Modifier = Modifier) {
 @Composable
 private fun PlayersTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit, onAction: (String, String, JSONObject?) -> Unit) {
     var selectedPlayer by remember { mutableStateOf<JSONObject?>(null) }
-    val players = listOfJson(data.optJSONArray("players")).filter {
+    var playerSearch by remember { mutableStateOf("") }
+    var statusFilter by remember { mutableStateOf("Todos") }
+    val allPlayers = listOfJson(data.optJSONArray("players")).filter {
         val n = it.optString("name").trim().lowercase()
-        it.optBoolean("active", true) && n != "cancelar" && n != "❌ cancelar"
+        n != "cancelar" && n != "❌ cancelar"
+    }
+    val players = allPlayers.filter { p ->
+        val status = p.optString("status", if (p.optBoolean("active", true)) "Ativo" else "Desligado")
+        val matchesStatus = statusFilter == "Todos" || status.equals(statusFilter, ignoreCase = true)
+        val query = playerSearch.trim()
+        val matchesQuery = query.isBlank() ||
+            p.optString("name").contains(query, ignoreCase = true) ||
+            p.optString("nickname").contains(query, ignoreCase = true)
+        matchesStatus && matchesQuery
     }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -362,10 +385,34 @@ private fun PlayersTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit, onAc
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     SectionTitle("ELENCO OFICIAL")
-                    Text("${players.size} integrantes cadastrados", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    Text("${allPlayers.size} integrantes no histórico do elenco", color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
                 if (admin) Button(onClick = onAdd, colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("+ JOGADOR") }
             }
+        }
+        item {
+            OutlinedTextField(
+                value = playerSearch,
+                onValueChange = { playerSearch = it },
+                label = { Text("Pesquisar jogador ou nick") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                listOf("Todos", "Ativo", "Reserva", "Afastado", "Desligado").forEach { status ->
+                    TextButton(
+                        onClick = { statusFilter = status },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            (if (statusFilter == status) "• " else "") + status,
+                            color = if (statusFilter == status) Gold else Muted,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            }
+            Text("${players.size} jogador(es) exibido(s)", color = Muted, style = MaterialTheme.typography.labelSmall)
         }
         items(players) { p ->
             val status = p.optString("status", "Ativo")
@@ -480,6 +527,7 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
     var localError by remember { mutableStateOf("") }
     var competitionId by remember { mutableStateOf("") }
     var competitionMenu by remember { mutableStateOf(false) }
+    var teamSide by remember { mutableStateOf("first") }
     val competitions = listOfJson(data.optJSONArray("competitions"))
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) scope.launch {
@@ -491,9 +539,10 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
                 }
                 if (bytes.size > 12 * 1024 * 1024) throw IOException("A imagem deve ter até 12 MB.")
                 val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
-                preview = api("api/mobile/matches/image/preview", "POST", token,
-                    JSONObject().put("image_base64", encoded))
-                competitionId = ""
+                val detected = api("api/mobile/matches/image/preview", "POST", token,
+                    JSONObject().put("image_base64", encoded).put("team_side", teamSide))
+                preview = detected
+                competitionId = detected.optInt("competition_id").takeIf { it > 0 }?.toString() ?: ""
             } catch (e: Exception) { localError = e.message ?: "Falha ao analisar a imagem." }
         }
     }
@@ -504,6 +553,19 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
                 Spacer(Modifier.weight(1f))
                 if (admin) Button(onClick = { picker.launch("image/*") },
                     colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("LER PRINT") }
+            }
+        }
+        item {
+            Text("No cabeçalho, a Arqueiros aparece como:", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { teamSide = "first" }, modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (teamSide == "first") Red else Panel)) {
+                    Text("PRIMEIRO NOME")
+                }
+                Button(onClick = { teamSide = "second" }, modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (teamSide == "second") Red else Panel)) {
+                    Text("SEGUNDO NOME")
+                }
             }
         }
         if (localError.isNotBlank()) item { Text(localError, color = Color(0xFFFF8B8B)) }
@@ -520,17 +582,80 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
     }
     preview?.let { result ->
         val scoreArray = result.optJSONArray("scores") ?: JSONArray()
+        if (scoreArray.length() == 0) { scoreArray.put(JSONObject.NULL); scoreArray.put(JSONObject.NULL) }
+        else if (scoreArray.length() == 1) scoreArray.put(JSONObject.NULL)
         val playerRows = listOfJson(result.optJSONArray("stats"))
+        var previewRevision by remember(result) { mutableIntStateOf(0) }
         val selectedComp = competitions.firstOrNull { it.optInt("id").toString() == competitionId }
         AlertDialog(onDismissRequest = { preview = null }, containerColor = Panel,
             title = { Text("CONFERIR LEITURA DO PRINT", color = Gold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.heightIn(max = 420.dp)) {
-                    Text("Adversário: ${result.optString("team")}", color = Color.White, fontWeight = FontWeight.Bold)
-                    Text("Placar dos clãs: ${if (scoreArray.length() > 0) scoreArray.opt(0) else "?"} × ${if (scoreArray.length() > 1) scoreArray.opt(1) else "?"}", color = Color.White)
+                    OutlinedTextField(
+                        value = result.optString("team"),
+                        onValueChange = { value -> result.put("team", value); previewRevision++ },
+                        label = { Text("Equipe adversária") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+                    )
+                    Text("Corrija o placar geral, se necessário:", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = if (scoreArray.isNull(0)) "" else scoreArray.optString(0),
+                            onValueChange = { value -> value.toIntOrNull()?.let { scoreArray.put(0, it); previewRevision++ } },
+                            label = { Text("Arqueiros") }, modifier = Modifier.weight(1f), singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = if (scoreArray.isNull(1)) "" else scoreArray.optString(1),
+                            onValueChange = { value -> value.toIntOrNull()?.let { scoreArray.put(1, it); previewRevision++ } },
+                            label = { Text("Adversário") }, modifier = Modifier.weight(1f), singleLine = true
+                        )
+                    }
                     Text("Jogadores reconhecidos: ${playerRows.size}", color = Gold)
-                    playerRows.forEach { p ->
-                        Text("${p.optString("player")} — ${p.optInt("goals_for")} × ${p.optInt("goals_against")}", color = Color.White)
+                    key(previewRevision) {
+                        playerRows.forEach { p ->
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                OutlinedTextField(
+                                    value = p.optString("detected_name", p.optString("player")),
+                                    onValueChange = { value ->
+                                        val canonicalName = p.optString("player").trim()
+                                        p.put("detected_name", value)
+                                        p.put("player", value)
+                                        if (value.trim() != canonicalName) {
+                                            p.put("player_id", JSONObject.NULL)
+                                            p.put("is_new_player", true)
+                                        }
+                                        previewRevision++
+                                    },
+                                    label = { Text(if (p.optBoolean("is_new_player")) "Novo jogador — confirme o nome" else "Jogador") },
+                                    modifier = Modifier.fillMaxWidth(), singleLine = true
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedTextField(
+                                        value = p.optInt("goals_for").toString(),
+                                        onValueChange = { value -> value.toIntOrNull()?.let { p.put("goals_for", it); previewRevision++ } },
+                                        label = { Text("Placar Arqueiros") }, modifier = Modifier.weight(1f), singleLine = true
+                                    )
+                                    OutlinedTextField(
+                                        value = p.optInt("goals_against").toString(),
+                                        onValueChange = { value -> value.toIntOrNull()?.let { p.put("goals_against", it); previewRevision++ } },
+                                        label = { Text("Placar adversário") }, modifier = Modifier.weight(1f), singleLine = true
+                                    )
+                                }
+                                if (p.optBoolean("is_new_player")) {
+                                    Text("Será criado no elenco após a confirmação.", color = Gold,
+                                        style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+                    if ((result.optJSONArray("new_players")?.length() ?: 0) > 0) {
+                        Text("Novos jogadores serão cadastrados após confirmar este registro.", color = Gold,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    val pendingPlayers = result.optJSONArray("pending_players")
+                    if ((pendingPlayers?.length() ?: 0) > 0) {
+                        val pendingNames = (0 until (pendingPlayers?.length() ?: 0)).map { pendingPlayers!!.optString(it) }
+                        Text("PENDENTES — não entram nas estatísticas: " + pendingNames.joinToString(", "),
+                            color = Muted, style = MaterialTheme.typography.bodySmall)
                     }
                     if (competitions.isNotEmpty()) {
                         Box {
@@ -617,8 +742,9 @@ private fun PerformanceTab(data: JSONObject, admin: Boolean, onAdd: (String) -> 
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text("RESUMO COLETIVO • PARTICIPAÇÕES INDIVIDUAIS", color = Gold, fontWeight = FontWeight.Black)
-                    Text("${team.optInt("games")} jogos registrados • ${team.optInt("wins")}V ${team.optInt("draws")}E ${team.optInt("losses")}D", color = Color.White)
-                    Text("${team.optInt("goals")} gols • ${team.optInt("assists")} assistências • ${team.optInt("points")} pontos", color = Muted)
+                    Text("${team.optInt("games")} confrontos • ${team.optInt("wins")}V ${team.optInt("draws")}E ${team.optInt("losses")}D", color = Color.White)
+                    Text("${team.optDouble("win_rate")}% aproveitamento • ${team.optInt("goals")} gols • ${team.optInt("conceded")} sofridos", color = Muted)
+                    Text("Saldo ${team.optInt("goal_difference")} • ${team.optInt("player_appearances")} participações de jogadores", color = Muted)
                 }
             }
         }

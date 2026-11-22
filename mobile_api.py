@@ -63,6 +63,24 @@ class FederationFixture(Base):
 PlayerGame.__table__.create(bind=engine, checkfirst=True)
 FederationFixture.__table__.create(bind=engine, checkfirst=True)
 
+class PlayerAlias(Base):
+    __tablename__ = "player_aliases"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    alias: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+
+
+class MobileImportFingerprint(Base):
+    __tablename__ = "mobile_import_fingerprints"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    image_sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"))
+
+
+PlayerAlias.__table__.create(bind=engine, checkfirst=True)
+MobileImportFingerprint.__table__.create(bind=engine, checkfirst=True)
+
+
 class PlayerPerformance(Base):
     __tablename__ = "player_performance_totals"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -89,16 +107,23 @@ def _store_performance(s, player_id, competition_id, goals_for, goals_against, g
     if row is None:
         row = PlayerPerformance(player_id=player_id, competition_id=cid, period=period)
         s.add(row)
+    # Older rows may contain NULL counters despite the model defaults.
+    # Normalize every counter before incrementing so one legacy row cannot
+    # prevent the whole mobile bootstrap from loading.
+    for field in ("games", "wins", "draws", "losses", "goals", "assists", "conceded"):
+        setattr(row, field, int(getattr(row, field, 0) or 0))
+    gf, ga = int(goals_for or 0), int(goals_against or 0)
+    scored, assisted = int(goals or 0), int(assists or 0)
     row.games += 1
-    if goals_for > goals_against:
+    if gf > ga:
         row.wins += 1
-    elif goals_for == goals_against:
+    elif gf == ga:
         row.draws += 1
     else:
         row.losses += 1
-    row.goals += goals
-    row.assists += assists
-    row.conceded += goals_against
+    row.goals += scored
+    row.assists += assisted
+    row.conceded += ga
 
 
 def _migrate_approved_player_games(s):
@@ -108,7 +133,9 @@ def _migrate_approved_player_games(s):
     for row in old_rows:
         _store_performance(s, row.player_id, row.competition_id, row.goals_for,
                            row.goals_against, row.goals, row.assists, row.created_at)
-        s.delete(row)
+        # Keep the original match record for the player's historical timeline.
+        # "Consolidado" prevents the next bootstrap from adding these totals twice.
+        row.status = "Consolidado"
     s.commit()
 
 
@@ -160,9 +187,24 @@ def _performance_payload(s):
     monthly_rows.sort(key=lambda x: (-x["points"], -x["goals"], -x["assists"], -x["win_rate"], x["name"]))
     fixtures = s.query(FederationFixture).order_by(FederationFixture.created_at.desc()).limit(100).all()
     competitions = {x.id: x.name for x in s.query(Competition).all()}
-    team_totals = {key: sum(row.get(key, 0) for row in ranking_rows)
-                   for key in ("games", "wins", "draws", "losses", "goals", "assists", "points")}
+    # Team performance is counted per approved team confrontation, not once per player.
+    team_matches = s.query(Match).filter(
+        Match.status == "Aprovado",
+        Match.home_score.isnot(None), Match.away_score.isnot(None)
+    ).all()
+    team_totals = {
+        "games": len(team_matches),
+        "wins": sum(x.home_score > x.away_score for x in team_matches),
+        "draws": sum(x.home_score == x.away_score for x in team_matches),
+        "losses": sum(x.home_score < x.away_score for x in team_matches),
+        "goals": sum(x.home_score or 0 for x in team_matches),
+        "conceded": sum(x.away_score or 0 for x in team_matches),
+        "assists": sum(row.get("assists", 0) for row in ranking_rows),
+    }
+    team_totals["goal_difference"] = team_totals["goals"] - team_totals["conceded"]
+    team_totals["points"] = team_totals["wins"] * 3 + team_totals["draws"]
     team_totals["win_rate"] = round(team_totals["wins"] * 100 / team_totals["games"], 1) if team_totals["games"] else 0
+    team_totals["player_appearances"] = sum(row.get("games", 0) for row in ranking_rows)
     return {
         "player_ranking": ranking_rows,
         "team_player_performance": team_totals,
@@ -337,7 +379,10 @@ def mobile_player_stats(pid: int, competition_id: Optional[int] = None,
     if not p:
         raise HTTPException(404, "Jogador não encontrado.")
     stats = player_metrics(s, p, competition_id)
-    games = s.query(PlayerGame).filter(PlayerGame.player_id == pid, PlayerGame.status == "Aprovado")
+    games = s.query(PlayerGame).filter(
+        PlayerGame.player_id == pid,
+        PlayerGame.status.in_(["Aprovado", "Consolidado"])
+    )
     if competition_id:
         games = games.filter(PlayerGame.competition_id == competition_id)
     rows = games.order_by(PlayerGame.created_at.desc()).all()
@@ -548,10 +593,52 @@ def mobile_full_report(user=Depends(admin_only)):
 
 
 
+def _parse_mobile_print_rows(text: str, team_side: str):
+    import re
+    rows = []
+    pending_players = []
+    for line in text.splitlines():
+        line = re.sub(r"\s+", " ", line).strip(" \t•")
+        line = re.sub(r"^\d+\s*(?:[º°])?\s*[.)➤>»:-]\s*", "", line)
+
+        # Official WhatsApp description format: PLAYER | 2 x 1
+        scored = re.match(r"^(.+?)\s*\|\s*(\d+)\s*[x×]\s*(\d+)\s*$", line, re.I)
+        if scored:
+            player_name = scored.group(1).strip(" •➤».-:")
+            if player_name:
+                rows.append({"detected_name": player_name, "opponent": "",
+                             "goals_for": int(scored.group(2)),
+                             "goals_against": int(scored.group(3))})
+            continue
+
+        # Pending players are visible in the review but never enter statistics.
+        pending = re.match(r"^(.+?)\s*\|\s*(?:PENDENTE|AGUARDANDO|NÃO\s+INFORMADO)\s*$", line, re.I)
+        if pending:
+            player_name = pending.group(1).strip(" •➤».-:")
+            if player_name:
+                pending_players.append(player_name)
+            continue
+
+        # Also accept a direct matchup line, where both player names are shown.
+        duel = re.match(r"^\s*(?:\d+\s*(?:[º°])?\s*[.)➤>»:-]?\s*)?(.+?)\s+(\d+)\s*[x×]\s*(\d+)(?:\s+(.+))?$", line, re.I)
+        if not duel:
+            continue
+        left = duel.group(1).strip(" •➤».-:")
+        right = (duel.group(4) or "").strip(" •➤».-:")
+        player_name, opponent = (left, right) if team_side == "first" else (right, left)
+        if player_name:
+            rows.append({"detected_name": player_name, "opponent": opponent,
+                         "goals_for": int(duel.group(2)) if team_side == "first" else int(duel.group(3)),
+                         "goals_against": int(duel.group(3)) if team_side == "first" else int(duel.group(2))})
+    return rows, pending_players
+
 @router.post("/matches/image/preview")
 async def mobile_match_image_preview(request: Request, user=Depends(admin_only), s: Session = Depends(get_db)):
     d = await request.json()
     encoded = str(d.get("image_base64", "")).strip()
+    team_side = str(d.get("team_side", "first")).strip().lower()
+    if team_side not in ("first", "second"):
+        raise HTTPException(400, "Informe se a Arqueiros aparece primeiro ou segundo nos confrontos.")
     if encoded.startswith("data:") and "," in encoded:
         encoded = encoded.split(",", 1)[1]
     try:
@@ -560,24 +647,85 @@ async def mobile_match_image_preview(request: Request, user=Depends(admin_only),
             raise ValueError("Imagem vazia ou maior que 12 MB.")
         from PIL import Image
         image = Image.open(io.BytesIO(raw))
-        roster = [p.name for p in s.query(Player).filter(Player.active.is_(True)).all()]
+        image_hash = hashlib.sha256(raw).hexdigest()
+        players = s.query(Player).all()
+        aliases = s.query(PlayerAlias).all()
+        alias_to_player = {normalize_name(p.name): p for p in players}
+        alias_to_player.update({normalize_name(p.nickname): p for p in players if p.nickname})
+        for alias in aliases:
+            player = s.get(Player, alias.player_id)
+            if player:
+                alias_to_player[normalize_name(alias.alias)] = player
+        roster = list({key for key in alias_to_player if key})
         text = extract_duel_text(image, roster)
         parsed = parse_duel_ocr(text, roster)
+        raw_rows, pending_players = _parse_mobile_print_rows(text, team_side)
     except Exception as exc:
         raise HTTPException(400, "Não foi possível ler o print: " + str(exc)[:180])
-    known = {normalize_name(p.name): p for p in s.query(Player).filter(Player.active.is_(True)).all()}
     stats = []
-    for item in parsed["stats"]:
-        key = normalize_name(item["player"])
-        player = known.get(key)
-        if player:
-            stats.append({"player_id": player.id, "player": player.name,
-                          "goals_for": int(item["gf"]), "goals_against": int(item["ga"]),
-                          "opponent": str(item.get("opponent", ""))})
-    if not stats:
-        raise HTTPException(422, "Nenhum jogador do elenco foi reconhecido com placar individual. Confira se o print está legível.")
-    return {"team": parsed["team"], "scores": parsed["scores"], "stats": stats,
-            "recognized": len(stats), "note": "A imagem foi processada em memória e não será armazenada."}
+    new_players = {}
+    for row in raw_rows:
+        key = normalize_name(row["detected_name"])
+        player = alias_to_player.get(key)
+        if player is None:
+            matches = [(k, p) for k, p in alias_to_player.items() if k and (k in key or key in k)]
+            if matches:
+                player = max(matches, key=lambda item: len(item[0]))[1]
+        if player is None and key:
+            # A small spelling variation should match an existing nickname/name,
+            # but ambiguous OCR must remain a new-player candidate for admin review.
+            import difflib
+            close = difflib.get_close_matches(key, list(alias_to_player.keys()), n=2, cutoff=0.82)
+            if close:
+                best = difflib.SequenceMatcher(None, key, close[0]).ratio()
+                second = difflib.SequenceMatcher(None, key, close[1]).ratio() if len(close) > 1 else 0
+                if best >= 0.82 and best - second >= 0.06:
+                    player = alias_to_player[close[0]]
+        stats.append({"player_id": player.id if player else None,
+                      "player": player.name if player else row["detected_name"],
+                      "detected_name": row["detected_name"],
+                      "is_new_player": player is None,
+                      "goals_for": row["goals_for"], "goals_against": row["goals_against"],
+                      "opponent": row["opponent"]})
+        if player is None:
+            new_players[normalize_name(row["detected_name"])] = row["detected_name"]
+    if not stats and not pending_players:
+        raise HTTPException(422, "Não encontrei jogadores com placares individuais. Confira se o print está completo e legível.")
+    scores = parsed.get("scores") or []
+    has_explicit_reverse_header = bool(
+        re.search(r"[^\s|]+\s*[x×]\s*\bAQR\b", text, re.I)
+        or re.search(r"^(.+?)\s*[x×]\s*\bARQUEIROS\s+E-SPORTS\b", text, re.I | re.M)
+    )
+    if team_side == "second" and not has_explicit_reverse_header and len(scores) >= 2:
+        scores = [scores[1], scores[0]]
+    competition_rows = s.query(Competition).all()
+    detected_competition_name = ""
+    detected_competition_id = None
+    for line in text.splitlines():
+        clean_line = line.strip().lstrip("#").strip()
+        if not clean_line:
+            continue
+        if clean_line.lower().startswith("competição:"):
+            clean_line = clean_line.split(":", 1)[1].strip()
+        for comp in competition_rows:
+            comp_key = normalize_name(comp.name)
+            line_key = normalize_name(clean_line)
+            if comp_key and (comp_key == line_key or comp_key in line_key):
+                detected_competition_name = comp.name
+                detected_competition_id = comp.id
+                break
+        if detected_competition_id:
+            break
+        if not detected_competition_name:
+            detected_competition_name = clean_line.lstrip("# ").strip()
+    return {"team": parsed.get("team", "Equipe adversária"), "scores": scores,
+            "stats": stats, "new_players": list(new_players.values()),
+            "pending_players": pending_players,
+            "competition_id": detected_competition_id,
+            "detected_competition_name": detected_competition_name,
+            "team_side": team_side, "image_sha256": image_hash,
+            "recognized": len(stats),
+            "note": "Novos jogadores serão cadastrados somente após a conferência e confirmação do administrador."}
 
 
 @router.post("/matches/image/confirm")
@@ -590,25 +738,68 @@ async def mobile_match_image_confirm(request: Request, user=Depends(admin_only),
     cid = d.get("competition_id") or None
     if cid and not s.get(Competition, int(cid)):
         raise HTTPException(404, "Competição não encontrada.")
+    image_hash = str(d.get("image_sha256", "")).strip()
+    if image_hash:
+        duplicate = s.query(MobileImportFingerprint).filter_by(image_sha256=image_hash).first()
+        if duplicate:
+            return {"ok": True, "duplicate": True, "id": duplicate.match_id,
+                    "status": "Já importado; nenhum registro duplicado foi criado."}
     stats = d.get("stats") or []
-    if not stats:
-        raise HTTPException(400, "Nenhum jogador reconhecido para registrar.")
-    match = Match(competition_id=int(cid) if cid else None, home="ARQUEIROS E-SPORTS",
+    if not stats and not d.get("pending_players"):
+        raise HTTPException(400, "Nenhum jogador com placar concluído para registrar.")
+    team_side = str(d.get("team_side", "first")).lower()
+    if team_side not in ("first", "second"):
+        raise HTTPException(400, "Lado da Arqueiros inválido.")
+    if hs is None or aw is None:
+        raise HTTPException(400, "O placar geral não foi reconhecido. Corrija o print ou envie uma imagem mais legível.")
+    if not cid:
+        raise HTTPException(400, "Selecione a competição antes de confirmar o confronto.")
+    match = Match(competition_id=int(cid), home="ARQUEIROS E-SPORTS",
                   away=team, home_score=hs, away_score=aw, status="Pendente")
     s.add(match)
     s.flush()
+    created_players = 0
     for item in stats:
-        player = s.get(Player, int(item.get("player_id", 0)))
-        if not player or not player.active:
-            raise HTTPException(400, "Um dos jogadores reconhecidos não está mais ativo.")
+        player_id = item.get("player_id")
+        detected_name = str(item.get("detected_name") or item.get("player") or "").strip()
+        player = s.get(Player, int(player_id)) if player_id else None
+        if player is None:
+            if not bool(item.get("is_new_player")) or not detected_name:
+                raise HTTPException(400, "Jogador não reconhecido. Associe a um cadastro existente ou confirme um novo jogador.")
+            existing = (s.query(Player).filter(Player.name.ilike(detected_name)).first()
+                        or s.query(Player).filter(Player.nickname.ilike(detected_name)).first())
+            if existing is None:
+                alias = s.query(PlayerAlias).filter(PlayerAlias.alias.ilike(detected_name)).first()
+                existing = s.get(Player, alias.player_id) if alias else None
+            player = existing or Player(name=detected_name, nickname=detected_name, status="Ativo", active=True)
+            if existing is None:
+                s.add(player)
+                s.flush()
+                created_players += 1
+                log(s, "player.created.from_match_print", detected_name)
         gf, ga = int(item["goals_for"]), int(item["goals_against"])
         if gf < 0 or ga < 0:
             raise HTTPException(400, "Placar individual inválido.")
+        # Save the OCR spelling as an alias when it differs from the canonical player name.
+        if normalize_name(detected_name) and normalize_name(detected_name) != normalize_name(player.name):
+            alias = s.query(PlayerAlias).filter_by(alias=detected_name).first()
+            if alias is None:
+                s.add(PlayerAlias(player_id=player.id, alias=detected_name))
         s.add(MatchPlayerStat(match_id=match.id, player_name=player.name,
                               opponent_name=str(item.get("opponent", "")), goals_for=gf, goals_against=ga))
-    log(s, "duel.ocr.mobile.pending", f"#{match.id} — {team}")
+    if image_hash:
+        s.add(MobileImportFingerprint(image_sha256=image_hash, match_id=match.id))
+    s.flush()
+    saved_stats = s.query(MatchPlayerStat).filter(MatchPlayerStat.match_id == match.id).all()
+    unresolved = [row.player_name for row in saved_stats
+                  if not s.query(Player).filter(Player.name == row.player_name).first()]
+    if unresolved:
+        raise HTTPException(400, "Jogador não associado ao elenco: " + ", ".join(unresolved))
+    match.status = "Aprovado"
+    log(s, "duel.ocr.mobile.approved", f"#{match.id} — {team}")
     s.commit()
-    return {"ok": True, "id": match.id, "status": match.status}
+    return {"ok": True, "id": match.id, "status": match.status,
+            "players_registered": created_players}
 
 
 @router.post("/player-games")
@@ -651,10 +842,11 @@ def mobile_player_game_action(gid: int, action: str, user=Depends(admin_only), s
         _store_performance(s, row.player_id, row.competition_id, row.goals_for,
                            row.goals_against, row.goals, row.assists, row.created_at)
         log(s, "player.game.approve", (p.name if p else str(row.player_id)) + " x " + row.opponent)
-        s.delete(row)
+        # Preserve the approved source row; totals are consolidated exactly once.
+        row.status = "Consolidado"
     else:
         log(s, "player.game.reject", (p.name if p else str(row.player_id)) + " x " + row.opponent)
-        s.delete(row)
+        # Keep rejected submissions for auditability instead of deleting evidence.
     s.commit()
     return {"ok": True}
 

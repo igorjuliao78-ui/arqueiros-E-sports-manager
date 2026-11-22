@@ -1,23 +1,11 @@
 services:
   - type: web
-    name: arqueiros-manager
+    name: arqueiros-E-sports-manager
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    region: oregon
     plan: free
+    branch: main
     healthCheckPath: /health
-    envVars:
-      - key: DATABASE_URL
-        sync: false
-      - key: ADMIN_PANEL_TOKEN
-        generateValue: true
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: TELEGRAM_ADMIN_IDS
-        sync: false
-      - key: TELEGRAM_WEBHOOK_SECRET
-        sync: false
-      - key: WEEKLY_REPORT_TOKEN
-        sync: false
-      - key: MOBILE_AUTH_SECRET
-        sync: false
+    autoDeployTrigger: commit
