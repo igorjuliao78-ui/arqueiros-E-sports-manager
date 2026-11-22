@@ -539,9 +539,10 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
                 }
                 if (bytes.size > 12 * 1024 * 1024) throw IOException("A imagem deve ter até 12 MB.")
                 val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
-                preview = api("api/mobile/matches/image/preview", "POST", token,
+                val detected = api("api/mobile/matches/image/preview", "POST", token,
                     JSONObject().put("image_base64", encoded).put("team_side", teamSide))
-                competitionId = ""
+                preview = detected
+                competitionId = detected.optInt("competition_id").takeIf { it > 0 }?.toString() ?: ""
             } catch (e: Exception) { localError = e.message ?: "Falha ao analisar a imagem." }
         }
     }
