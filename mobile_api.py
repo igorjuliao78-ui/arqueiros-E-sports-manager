@@ -147,7 +147,7 @@ def _performance_payload(s):
     start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     end = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
     month = (start, end)
-    players = s.query(Player).filter(Player.active.is_(True)).all()
+    players = s.query(Player).all()
     ranking_rows = []
     monthly_rows = []
     for p in players:
