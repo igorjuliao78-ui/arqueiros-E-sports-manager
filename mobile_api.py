@@ -702,7 +702,8 @@ async def mobile_match_image_confirm(request: Request, user=Depends(admin_only),
         if player is None:
             if not bool(item.get("is_new_player")) or not detected_name:
                 raise HTTPException(400, "Jogador não reconhecido. Associe a um cadastro existente ou confirme um novo jogador.")
-            existing = s.query(Player).filter(Player.name.ilike(detected_name)).first()
+            existing = (s.query(Player).filter(Player.name.ilike(detected_name)).first()
+                        or s.query(Player).filter(Player.nickname.ilike(detected_name)).first())
             player = existing or Player(name=detected_name, nickname=detected_name, status="Ativo", active=True)
             if existing is None:
                 s.add(player)
