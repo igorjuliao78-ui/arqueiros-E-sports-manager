@@ -47,7 +47,7 @@ val generateArqueirosLauncherIcons by tasks.registering {
     doLast {
         val encoded = logoFile.readText().trim()
         val bytes = Base64.getDecoder().decode(encoded)
-        val source = javax.imageio.ImageIO.read(ByteArrayInputStream(bytes))
+        val source = ImageIO.read(ByteArrayInputStream(bytes))
         launcherIconSizes.forEach { (density, size) ->
             val directory = file("src/main/res/mipmap-" + density)
             directory.mkdirs()
