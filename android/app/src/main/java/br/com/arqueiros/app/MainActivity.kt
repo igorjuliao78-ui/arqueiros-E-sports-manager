@@ -337,7 +337,7 @@ private fun PlayersTab(data: JSONObject, admin: Boolean, onAdd: () -> Unit, onAc
     var selectedPlayer by remember { mutableStateOf<JSONObject?>(null) }
     val players = listOfJson(data.optJSONArray("players")).filter {
         val n = it.optString("name").trim().lowercase()
-        n != "cancelar" && n != "❌ cancelar"
+        it.optBoolean("active", true) && n != "cancelar" && n != "❌ cancelar"
     }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -541,7 +541,7 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
                         onRefresh()
                     } catch (e: Exception) { localError = e.message ?: "Falha ao registrar os dados." }
                 }
-            }) { Text("CONFIRMAR REGISTRO", color = Gold) } },
+            }, enabled = competitionId.isNotBlank()) { Text("CONFIRMAR REGISTRO", color = Gold) } },
             dismissButton = { TextButton(onClick = { preview = null }) { Text("CANCELAR", color = Muted) } })
     }
 }
