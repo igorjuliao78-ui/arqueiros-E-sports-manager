@@ -515,6 +515,7 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
     var localError by remember { mutableStateOf("") }
     var competitionId by remember { mutableStateOf("") }
     var competitionMenu by remember { mutableStateOf(false) }
+    var teamSide by remember { mutableStateOf("first") }
     val competitions = listOfJson(data.optJSONArray("competitions"))
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) scope.launch {
@@ -527,7 +528,7 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
                 if (bytes.size > 12 * 1024 * 1024) throw IOException("A imagem deve ter até 12 MB.")
                 val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
                 preview = api("api/mobile/matches/image/preview", "POST", token,
-                    JSONObject().put("image_base64", encoded))
+                    JSONObject().put("image_base64", encoded).put("team_side", teamSide))
                 competitionId = ""
             } catch (e: Exception) { localError = e.message ?: "Falha ao analisar a imagem." }
         }
@@ -539,6 +540,19 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
                 Spacer(Modifier.weight(1f))
                 if (admin) Button(onClick = { picker.launch("image/*") },
                     colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("LER PRINT") }
+            }
+        }
+        item {
+            Text("Nos confrontos, a Arqueiros aparece como:", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { teamSide = "first" }, modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (teamSide == "first") Red else Panel)) {
+                    Text("PRIMEIRO NOME")
+                }
+                Button(onClick = { teamSide = "second" }, modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (teamSide == "second") Red else Panel)) {
+                    Text("SEGUNDO NOME")
+                }
             }
         }
         if (localError.isNotBlank()) item { Text(localError, color = Color(0xFFFF8B8B)) }
@@ -565,7 +579,13 @@ private fun MatchesTab(data: JSONObject, admin: Boolean, token: String,
                     Text("Placar dos clãs: ${if (scoreArray.length() > 0) scoreArray.opt(0) else "?"} × ${if (scoreArray.length() > 1) scoreArray.opt(1) else "?"}", color = Color.White)
                     Text("Jogadores reconhecidos: ${playerRows.size}", color = Gold)
                     playerRows.forEach { p ->
-                        Text("${p.optString("player")} — ${p.optInt("goals_for")} × ${p.optInt("goals_against")}", color = Color.White)
+                        Text("${p.optString("player")} — ${p.optInt("goals_for")} × ${p.optInt("goals_against")}" +
+                            if (p.optBoolean("is_new_player")) " • NOVO JOGADOR" else "",
+                            color = if (p.optBoolean("is_new_player")) Gold else Color.White)
+                    }
+                    if ((result.optJSONArray("new_players")?.length() ?: 0) > 0) {
+                        Text("Novos jogadores serão cadastrados após confirmar este registro.", color = Gold,
+                            style = MaterialTheme.typography.bodySmall)
                     }
                     if (competitions.isNotEmpty()) {
                         Box {
