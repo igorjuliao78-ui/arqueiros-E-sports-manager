@@ -269,7 +269,16 @@ def mobile_player_stats(pid: int, competition_id: Optional[int] = None,
     p = s.get(Player, pid)
     if not p:
         raise HTTPException(404, "Jogador não encontrado.")
-    return {"player": _player(p), "stats": player_metrics(s, p, competition_id)}
+    stats = player_metrics(s, p, competition_id)
+    games = s.query(PlayerGame).filter(PlayerGame.player_id == pid, PlayerGame.status == "Aprovado")
+    if competition_id:
+        games = games.filter(PlayerGame.competition_id == competition_id)
+    rows = games.order_by(PlayerGame.created_at.desc()).all()
+    stats["individual_games"] = [{"id": x.id, "opponent": x.opponent, "goals_for": x.goals_for,
+        "goals_against": x.goals_against, "goals": x.goals, "assists": x.assists,
+        "created_at": x.created_at.isoformat()} for x in rows]
+    stats["performance"] = _player_performance(s, p)
+    return {"player": _player(p), "stats": stats}
 
 
 @router.post("/users")
@@ -521,6 +530,8 @@ async def mobile_create_federation_fixture(request: Request, user=Depends(admin_
         sa = int(d["score_against"]) if str(d.get("score_against", "")).strip() else None
     except ValueError:
         raise HTTPException(400, "Placar inválido.")
+    if (sf is None) != (sa is None):
+        raise HTTPException(400, "Informe os dois lados do placar.")
     if sf is not None and min(sf, sa) < 0:
         raise HTTPException(400, "Placar não pode ser negativo.")
     cid = d.get("competition_id") or None
