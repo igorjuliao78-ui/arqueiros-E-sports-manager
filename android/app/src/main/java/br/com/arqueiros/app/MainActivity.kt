@@ -321,6 +321,18 @@ private fun HomeTab(data: JSONObject) {
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatCard("Aprovados", d.optInt("approved"), Modifier.weight(1f)); StatCard("Pendentes", d.optInt("pending"), Modifier.weight(1f)); StatCard("Títulos", d.optInt("titles"), Modifier.weight(1f))
         } }
+        item {
+            val team = data.optJSONObject("team_player_performance") ?: JSONObject()
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("DESEMPENHO GERAL DA EQUIPE", color = Gold, fontWeight = FontWeight.Black)
+                    Text("${team.optInt("games")} confrontos • ${team.optInt("wins")}V ${team.optInt("draws")}E ${team.optInt("losses")}D",
+                        color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("${team.optDouble("win_rate")}% de aproveitamento • saldo ${team.optInt("goal_difference")}",
+                        color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
         item { SectionTitle("CLASSIFICAÇÃO") }
         items(listOfJson(data.optJSONArray("rankings"))) { r ->
             InfoCard(r.optString("team") + " • " + r.optInt("PTS") + " pts",
@@ -700,8 +712,9 @@ private fun PerformanceTab(data: JSONObject, admin: Boolean, onAdd: (String) -> 
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text("RESUMO COLETIVO • PARTICIPAÇÕES INDIVIDUAIS", color = Gold, fontWeight = FontWeight.Black)
-                    Text("${team.optInt("games")} jogos registrados • ${team.optInt("wins")}V ${team.optInt("draws")}E ${team.optInt("losses")}D", color = Color.White)
-                    Text("${team.optInt("goals")} gols • ${team.optInt("assists")} assistências • ${team.optInt("points")} pontos", color = Muted)
+                    Text("${team.optInt("games")} confrontos • ${team.optInt("wins")}V ${team.optInt("draws")}E ${team.optInt("losses")}D", color = Color.White)
+                    Text("${team.optDouble("win_rate")}% aproveitamento • ${team.optInt("goals")} gols • ${team.optInt("conceded")} sofridos", color = Muted)
+                    Text("Saldo ${team.optInt("goal_difference")} • ${team.optInt("player_appearances")} participações de jogadores", color = Muted)
                 }
             }
         }
