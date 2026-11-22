@@ -31,6 +31,89 @@ class MobileUser(Base):
 
 MobileUser.__table__.create(bind=engine, checkfirst=True)
 
+class PlayerGame(Base):
+    __tablename__ = "player_games"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    opponent: Mapped[str] = mapped_column(String(120), default="")
+    competition_id: Mapped[Optional[int]] = mapped_column(ForeignKey("competitions.id"), nullable=True)
+    goals_for: Mapped[int] = mapped_column(Integer, default=0)
+    goals_against: Mapped[int] = mapped_column(Integer, default=0)
+    goals: Mapped[int] = mapped_column(Integer, default=0)
+    assists: Mapped[int] = mapped_column(Integer, default=0)
+    evidence_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="Pendente")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class FederationFixture(Base):
+    __tablename__ = "federation_fixtures"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    competition_id: Mapped[Optional[int]] = mapped_column(ForeignKey("competitions.id"), nullable=True)
+    round_name: Mapped[str] = mapped_column(String(80), default="")
+    match_format: Mapped[str] = mapped_column(String(10), default="3x3")
+    opponent: Mapped[str] = mapped_column(String(120))
+    score_for: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    score_against: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    lineup: Mapped[str] = mapped_column(Text, default="")
+    evidence_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="Pendente")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+PlayerGame.__table__.create(bind=engine, checkfirst=True)
+FederationFixture.__table__.create(bind=engine, checkfirst=True)
+
+
+def _player_performance(s, player, month=None):
+    q = s.query(PlayerGame).filter(PlayerGame.player_id == player.id, PlayerGame.status == "Aprovado")
+    if month:
+        q = q.filter(PlayerGame.created_at >= month[0], PlayerGame.created_at < month[1])
+    games = q.all()
+    wins = sum(x.goals_for > x.goals_against for x in games)
+    draws = sum(x.goals_for == x.goals_against for x in games)
+    losses = len(games) - wins - draws
+    goals = sum(x.goals for x in games)
+    assists = sum(x.assists for x in games)
+    return {"games": len(games), "wins": wins, "draws": draws, "losses": losses,
+            "goals": goals, "assists": assists,
+            "points": wins * 3 + draws,
+            "win_rate": round(wins * 100 / len(games), 1) if games else 0}
+
+
+def _performance_payload(s):
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    end = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    month = (start, end)
+    players = s.query(Player).filter(Player.active.is_(True)).all()
+    ranking_rows = []
+    monthly_rows = []
+    for p in players:
+        total = _player_performance(s, p)
+        monthly = _player_performance(s, p, month)
+        ranking_rows.append({"player_id": p.id, "name": p.name, **total})
+        if monthly["games"]:
+            monthly_rows.append({"player_id": p.id, "name": p.name, **monthly})
+    ranking_rows.sort(key=lambda x: (-x["points"], -x["goals"], -x["assists"], -x["win_rate"], x["name"]))
+    monthly_rows.sort(key=lambda x: (-x["points"], -x["goals"], -x["assists"], -x["win_rate"], x["name"]))
+    fixtures = s.query(FederationFixture).order_by(FederationFixture.created_at.desc()).limit(100).all()
+    competitions = {x.id: x.name for x in s.query(Competition).all()}
+    return {
+        "player_ranking": ranking_rows,
+        "mvp_month": monthly_rows[0] if monthly_rows else None,
+        "player_games": [{"id": x.id, "player_id": x.player_id, "player": s.get(Player, x.player_id).name if s.get(Player, x.player_id) else "",
+                          "opponent": x.opponent, "competition": competitions.get(x.competition_id, ""),
+                          "goals_for": x.goals_for, "goals_against": x.goals_against, "goals": x.goals,
+                          "assists": x.assists, "status": x.status, "created_at": x.created_at.isoformat(),
+                          "evidence_url": x.evidence_url} for x in s.query(PlayerGame).order_by(PlayerGame.created_at.desc()).limit(100).all()],
+        "federation_fixtures": [{"id": x.id, "competition": competitions.get(x.competition_id, ""),
+                                 "round": x.round_name, "format": x.match_format, "opponent": x.opponent,
+                                 "score_for": x.score_for, "score_against": x.score_against,
+                                 "lineup": x.lineup, "status": x.status, "evidence_url": x.evidence_url,
+                                 "created_at": x.created_at.isoformat()} for x in fixtures]
+    }
+
+
 
 def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode().rstrip("=")
@@ -162,6 +245,7 @@ def mobile_bootstrap(user=Depends(current_user), s: Session = Depends(get_db)):
         "notices": [{"id": n.id, "title": n.title, "body": n.body,
                      "created_at": n.created_at.isoformat() if n.created_at else None} for n in notices],
         "rankings": ranking(s),
+        **_performance_payload(s),
         "admin": is_admin
     }
     if is_admin:
@@ -384,3 +468,96 @@ def mobile_full_report(user=Depends(admin_only)):
                                  headers={"Content-Disposition": "attachment; filename=arqueiros-relatorio-geral.pdf"})
     finally:
         s.close()
+
+
+@router.post("/player-games")
+async def mobile_create_player_game(request: Request, user=Depends(admin_only), s: Session = Depends(get_db)):
+    d = await request.json()
+    try:
+        player_id = int(d.get("player_id"))
+        gf, ga = int(d.get("goals_for")), int(d.get("goals_against"))
+        goals, assists = int(d.get("goals", 0)), int(d.get("assists", 0))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Informe jogador e placar válido.")
+    if not s.get(Player, player_id):
+        raise HTTPException(404, "Jogador não encontrado.")
+    if min(gf, ga, goals, assists) < 0:
+        raise HTTPException(400, "Estatísticas não podem ser negativas.")
+    cid = d.get("competition_id") or None
+    row = PlayerGame(player_id=player_id, opponent=str(d.get("opponent", "")).strip(),
+                     competition_id=int(cid) if cid else None, goals_for=gf, goals_against=ga,
+                     goals=goals, assists=assists, evidence_url=str(d.get("evidence_url", "")).strip() or None)
+    s.add(row); log(s, "player.game.submitted", str(player_id) + " x " + row.opponent); s.commit()
+    return {"ok": True, "id": row.id, "status": row.status}
+
+
+@router.post("/player-games/{gid}/{action}")
+def mobile_player_game_action(gid: int, action: str, user=Depends(admin_only), s: Session = Depends(get_db)):
+    if action not in ("approve", "reject"):
+        raise HTTPException(400, "Ação inválida.")
+    row = s.get(PlayerGame, gid)
+    if not row:
+        raise HTTPException(404, "Jogo não encontrado.")
+    if row.status != "Pendente":
+        raise HTTPException(400, "Este jogo já foi analisado.")
+    row.status = "Aprovado" if action == "approve" else "Rejeitado"
+    p = s.get(Player, row.player_id)
+    log(s, "player.game." + action, (p.name if p else str(row.player_id)) + " x " + row.opponent)
+    s.commit()
+    return {"ok": True}
+
+
+@router.post("/federation")
+async def mobile_create_federation_fixture(request: Request, user=Depends(admin_only), s: Session = Depends(get_db)):
+    d = await request.json()
+    opponent = str(d.get("opponent", "")).strip()
+    fmt = str(d.get("format", "3x3")).strip()
+    if not opponent:
+        raise HTTPException(400, "Informe o adversário.")
+    if fmt not in ("3x3", "5x5", "6x6"):
+        raise HTTPException(400, "Formato deve ser 3x3, 5x5 ou 6x6.")
+    try:
+        sf = int(d["score_for"]) if str(d.get("score_for", "")).strip() else None
+        sa = int(d["score_against"]) if str(d.get("score_against", "")).strip() else None
+    except ValueError:
+        raise HTTPException(400, "Placar inválido.")
+    if sf is not None and min(sf, sa) < 0:
+        raise HTTPException(400, "Placar não pode ser negativo.")
+    cid = d.get("competition_id") or None
+    row = FederationFixture(competition_id=int(cid) if cid else None,
+        round_name=str(d.get("round", "")).strip(), match_format=fmt, opponent=opponent,
+        score_for=sf, score_against=sa, lineup=str(d.get("lineup", "")).strip(),
+        evidence_url=str(d.get("evidence_url", "")).strip() or None)
+    s.add(row); log(s, "federation.fixture.created", opponent + " • " + fmt); s.commit()
+    return {"ok": True, "id": row.id, "status": row.status}
+
+
+@router.put("/federation/{fid}")
+async def mobile_update_federation_fixture(fid: int, request: Request, user=Depends(admin_only), s: Session = Depends(get_db)):
+    d = await request.json()
+    row = s.get(FederationFixture, fid)
+    if not row:
+        raise HTTPException(404, "Confronto de federação não encontrado.")
+    if "score_for" in d: row.score_for = int(d["score_for"])
+    if "score_against" in d: row.score_against = int(d["score_against"])
+    if "lineup" in d: row.lineup = str(d["lineup"]).strip()
+    if "round" in d: row.round_name = str(d["round"]).strip()
+    if "evidence_url" in d: row.evidence_url = str(d["evidence_url"]).strip() or None
+    log(s, "federation.fixture.updated", row.opponent); s.commit()
+    return {"ok": True}
+
+
+@router.post("/federation/{fid}/{action}")
+def mobile_federation_action(fid: int, action: str, user=Depends(admin_only), s: Session = Depends(get_db)):
+    if action not in ("approve", "reject"):
+        raise HTTPException(400, "Ação inválida.")
+    row = s.get(FederationFixture, fid)
+    if not row:
+        raise HTTPException(404, "Confronto de federação não encontrado.")
+    if row.status != "Pendente":
+        raise HTTPException(400, "Este confronto já foi analisado.")
+    if action == "approve" and (row.score_for is None or row.score_against is None):
+        raise HTTPException(400, "Informe o placar antes de aprovar.")
+    row.status = "Aprovado" if action == "approve" else "Rejeitado"
+    log(s, "federation.fixture." + action, row.opponent); s.commit()
+    return {"ok": True}
