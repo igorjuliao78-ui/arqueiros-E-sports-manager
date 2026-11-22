@@ -290,8 +290,7 @@ private fun FormDialog(spec: FormSpec, players: List<JSONObject> = emptyList(),
                 }
             }
         } },
-        confirmButton = { TextButton(onClick = { onSave(values.toMap()) }, enabled = (spec.fields.none { it.first == "player_id" } || !values["player_id"].isNullOrBlank()) &&
-                (spec.title != "Lançar jogo de jogador" || !values["competition_id"].isNullOrBlank())) { Text("SALVAR", color = Gold) } },
+        confirmButton = { TextButton(onClick = { onSave(values.toMap()) }, enabled = (spec.fields.none { it.first == "player_id" } || !values["player_id"].isNullOrBlank())) { Text("SALVAR", color = Gold) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("CANCELAR", color = Muted) } })
 }
 

@@ -568,23 +568,30 @@ def parse_duel_ocr(text,roster_names=None):
 def extract_duel_text(image,roster_names=None):
  from PIL import ImageOps, ImageFilter
  base=ImageOps.exif_transpose(image).convert("RGB")
- base.thumbnail((2400,2400))
- scale=2 if max(base.size)<1800 else 1
+ base.thumbnail((2600,2600))
+ scale=2 if max(base.size)<2000 else 1
  if scale>1:base=base.resize((base.width*scale,base.height*scale),Image.Resampling.LANCZOS)
  gray=ImageOps.grayscale(base);gray=ImageOps.autocontrast(gray)
- sharp=gray.filter(ImageFilter.UnsharpMask(radius=2,percent=180,threshold=3))
- threshold=sharp.point(lambda p:255 if p>155 else 0)
+ sharp=gray.filter(ImageFilter.UnsharpMask(radius=2,percent=190,threshold=3))
  try:langs=pytesseract.get_languages(config="")
  except Exception as exc:raise RuntimeError("O mecanismo Tesseract não está instalado no servidor.") from exc
  lang="+".join(x for x in ("por","eng") if x in langs) or ("eng" if "eng" in langs else (langs[0] if langs else ""))
  if not lang:raise RuntimeError("Tesseract instalado, mas nenhum idioma OCR está disponível.")
  candidates=[]
- for candidate in (sharp,threshold,ImageOps.invert(threshold)):
-  for psm in (6,11,4):
-   txt=pytesseract.image_to_string(candidate,lang=lang,config=f"--oem 3 --psm {psm}")
+ variants=[sharp]
+ for cutoff in (120,140,160,180,200):
+  binary=sharp.point(lambda p:255 if p>cutoff else 0)
+  variants.extend((binary,ImageOps.invert(binary)))
+ for candidate in variants:
+  for psm in (6,11,4,3):
+   try:txt=pytesseract.image_to_string(candidate,lang=lang,config=f"--oem 3 --psm {psm}")
+   except Exception:continue
    parsed=parse_duel_ocr(txt,roster_names)
-   score=len(parsed["stats"])*10+sum(x is not None for x in parsed["scores"])*2+(parsed["team"]!="Equipe adversária")
+   numeric_rows=sum(bool(re.search(r"\d+\s*[x×]\s*\d+",line)) for line in txt.splitlines())
+   formatted_rows=sum(bool(re.search(r"\|\s*\d+\s*[x×]\s*\d+",line)) for line in txt.splitlines())
+   score=len(parsed["stats"])*12+sum(x is not None for x in parsed["scores"])*3+numeric_rows+formatted_rows*3+(parsed["team"]!="Equipe adversária")
    candidates.append((score,txt))
+ if not candidates:raise RuntimeError("Não foi possível extrair texto da imagem.")
  return max(candidates,key=lambda item:item[0])[1]
 def process_duel_photo(chat,file_id):
  try:
