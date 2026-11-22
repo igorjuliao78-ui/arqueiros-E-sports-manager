@@ -721,9 +721,11 @@ async def mobile_match_image_confirm(request: Request, user=Depends(admin_only),
     if image_hash:
         s.add(MobileImportFingerprint(image_sha256=image_hash, match_id=match.id))
     s.flush()
-    approval_error = match_approval_error(s, match)
-    if approval_error:
-        raise HTTPException(400, approval_error)
+    saved_stats = s.query(MatchPlayerStat).filter(MatchPlayerStat.match_id == match.id).all()
+    unresolved = [row.player_name for row in saved_stats
+                  if not s.query(Player).filter(Player.name == row.player_name).first()]
+    if unresolved:
+        raise HTTPException(400, "Jogador não associado ao elenco: " + ", ".join(unresolved))
     match.status = "Aprovado"
     log(s, "duel.ocr.mobile.approved", f"#{match.id} — {team}")
     s.commit()
