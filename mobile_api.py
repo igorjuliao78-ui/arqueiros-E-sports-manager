@@ -598,7 +598,7 @@ def _parse_mobile_print_rows(text: str, team_side: str):
     rows = []
     for line in text.splitlines():
         line = re.sub(r"\s+", " ", line).strip()
-        duel = re.match(r"^\s*(?:\d+\s*[.)➤>»:-]?\s*)?(.+?)\s+(\d+)\s*[x×]\s*(\d+)(?:\s+(.+))?$", line, re.I)
+        duel = re.match(r"^\s*(?:\d+\s*(?:[º°])?\s*[.)➤>»:-]?\s*)?(.+?)\s+(\d+)\s*[x×]\s*(\d+)(?:\s+(.+))?$", line, re.I)
         if not duel:
             continue
         left = duel.group(1).strip(" •➤».-:")
