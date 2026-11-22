@@ -590,8 +590,8 @@ def _parse_mobile_print_rows(text: str, team_side: str):
     import re
     rows = []
     for line in text.splitlines():
-        line = re.sub(r"\\s+", " ", line).strip()
-        duel = re.match(r"^\\s*(?:\\d+\\s*[.)➤>»:-]?\\s*)?(.+?)\\s+(\\d+)\\s*[x×]\\s*(\\d+)(?:\\s+(.+))?$", line, re.I)
+        line = re.sub(r"\s+", " ", line).strip()
+        duel = re.match(r"^\s*(?:\d+\s*[.)➤>»:-]?\s*)?(.+?)\s+(\d+)\s*[x×]\s*(\d+)(?:\s+(.+))?$", line, re.I)
         if not duel:
             continue
         left = duel.group(1).strip(" •➤».-:")
@@ -655,7 +655,7 @@ async def mobile_match_image_preview(request: Request, user=Depends(admin_only),
     if not stats:
         raise HTTPException(422, "Não encontrei linhas de confronto com placares individuais. Confira se o print está completo e legível.")
     scores = parsed.get("scores") or []
-    has_explicit_reverse_header = bool(re.search(r"[^\\s|]+\\s*[x×]\\s*\\bAQR\\b", text, re.I))
+    has_explicit_reverse_header = bool(re.search(r"[^\s|]+\s*[x×]\s*\bAQR\b", text, re.I))
     if team_side == "second" and not has_explicit_reverse_header and len(scores) >= 2:
         scores = [scores[1], scores[0]]
     return {"team": parsed.get("team", "Equipe adversária"), "scores": scores,
