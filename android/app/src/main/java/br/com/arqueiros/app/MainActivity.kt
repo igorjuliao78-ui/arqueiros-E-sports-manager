@@ -318,11 +318,11 @@ private fun RankingPage(data:JSONObject) {
    items(ranking) { p ->
     PanelCard(modifier=Modifier.background(if(ranking.indexOf(p)==0) Color(0xFF4D0A10) else Color(0xFF17181C),RoundedCornerShape(12.dp))) {
      Row(verticalAlignment=Alignment.CenterVertically) {
-      Text("\${ranking.indexOf(p)+1}",color=if(ranking.indexOf(p)==0) Color(0xFFFFD166) else Muted,fontWeight=FontWeight.Black,modifier=Modifier.width(25.dp))
+      Text("${ranking.indexOf(p)+1}",color=if(ranking.indexOf(p)==0) Color(0xFFFFD166) else Muted,fontWeight=FontWeight.Black,modifier=Modifier.width(25.dp))
       Box(Modifier.size(38.dp).background(Color(0xFF32141A),RoundedCornerShape(50)),contentAlignment=Alignment.Center) { Text(p.optString("name",p.optString("team","?")).take(1).uppercase(),color=White,fontWeight=FontWeight.Black) }
       Spacer(Modifier.width(10.dp))
       Column(Modifier.weight(1f)) { Text(p.optString("name",p.optString("team","Equipe")),color=White,fontWeight=FontWeight.Bold,fontSize=12.sp); Text("Classificação geral",color=Muted,fontSize=10.sp) }
-      Text("\${p.optInt("points",p.optInt("pts"))} pts",color=White,fontWeight=FontWeight.Bold,fontSize=12.sp)
+      Text("${p.optInt("points",p.optInt("pts"))} pts",color=White,fontWeight=FontWeight.Bold,fontSize=12.sp)
      }
     }
    }
@@ -346,12 +346,12 @@ private fun StatisticsPage(data:JSONObject) {
   Spacer(Modifier.height(14.dp)); SectionTitle("DESEMPENHO DA EQUIPE")
   PanelCard {
    val rate=if(games>0) (wins*100/games) else 0
-   Text("\$rate%",color=Color(0xFF35D477),fontSize=34.sp,fontWeight=FontWeight.Black)
+   Text("$rate%",color=Color(0xFF35D477),fontSize=34.sp,fontWeight=FontWeight.Black)
    Text("Aproveitamento • dados disponíveis",color=Muted,fontSize=10.sp)
    LinearProgressIndicator(progress={rate/100f},modifier=Modifier.fillMaxWidth().height(8.dp),color=Color(0xFF35D477),trackColor=Color(0xFF33343A))
   }
   Spacer(Modifier.height(12.dp)); SectionTitle("ELENCO")
-  PanelCard { Text("\${players.size} jogadores cadastrados",color=White,fontSize=18.sp,fontWeight=FontWeight.Bold); Text("Estatísticas individuais disponíveis no cadastro de cada jogador.",color=Muted,fontSize=11.sp) }
+  PanelCard { Text("${players.size} jogadores cadastrados",color=White,fontSize=18.sp,fontWeight=FontWeight.Bold); Text("Estatísticas individuais disponíveis no cadastro de cada jogador.",color=Muted,fontSize=11.sp) }
  }
 }
 
