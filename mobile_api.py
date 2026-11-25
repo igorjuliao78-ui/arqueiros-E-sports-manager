@@ -786,8 +786,8 @@ async def mobile_match_image_confirm(request: Request, user=Depends(admin_only),
                   if not s.query(Player).filter(Player.name == row.player_name).first()]
     if unresolved:
         raise HTTPException(400, "Jogador não associado ao elenco: " + ", ".join(unresolved))
-    match.status = "Aprovado"
-    log(s, "duel.ocr.mobile.approved", f"#{match.id} — {team}")
+    match.status = "Pendente"
+    log(s, "duel.ocr.mobile.submitted", f"#{match.id} — {team}; aguardando revisão administrativa")
     s.commit()
     return {"ok": True, "id": match.id, "status": match.status,
             "players_registered": created_players}
