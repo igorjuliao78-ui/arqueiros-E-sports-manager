@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private class Api(private val context: Context) {
-    private val base = BuildConfig.API_BASE_URL.trimEnd('/')
+    private val base = "https://arqueiros-e-sports-manager.onrender.com"
     private val prefs = context.getSharedPreferences("arqueiros", Context.MODE_PRIVATE)
     var token: String?
         get() = prefs.getString("token", null)
@@ -195,7 +195,7 @@ private fun PlayersPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Corouti
         Spacer(Modifier.height(8.dp)); Field("Buscar jogador",search,{search=it})
         if(showAdd) {
             Spacer(Modifier.height(8.dp)); Field("Nome completo",name,{name=it}); Field("Nick",nick,{nick=it}); Field("Posição",position,{position=it})
-            Button(onClick={scope.launch { try { api.request("/api/mobile/players","POST",JSONObject().put("name",name).put("nickname",nick).put("position",position)); name="";nick="";position="";showAdd=false;refresh() } catch(e:Exception){errorSetter(e.message?:"Erro")} },enabled=name.isNotBlank(),colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("SALVAR JOGADOR")}
+            Button(onClick={scope.launch { try { api.request("/api/mobile/players","POST",JSONObject().put("name",name).put("nickname",nick).put("position",position)); name="";nick="";position="";showAdd=false;refresh() } catch(e:Exception){errorSetter(e.message?:"Erro")} } },enabled=name.isNotBlank(),colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("SALVAR JOGADOR")}
         }
         LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(vertical=12.dp)) {
             items(players) { p -> PanelCard {
@@ -216,7 +216,7 @@ private fun MatchesPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Corouti
         Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text("PARTIDAS",color=White,fontSize=22.sp,fontWeight=FontWeight.Black);Text("Resultados e aprovações",color=Muted,fontSize=12.sp)};Button(onClick={showAdd=!showAdd},colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("＋ REGISTRAR")}}
         if(showAdd) {
             Spacer(Modifier.height(8.dp));Field("Equipe da casa",home,{home=it});Field("Adversário",away,{away=it});Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Field("Arqueiros",hs,{hs=it},modifier=Modifier.weight(1f));Field("Adversário",ascore,{ascore=it},modifier=Modifier.weight(1f))}
-            Button(onClick={scope.launch { try { api.request("/api/mobile/matches","POST",JSONObject().put("home",home).put("away",away).put("home_score",hs.toInt()).put("away_score",ascore.toInt()));showAdd=false;refresh() } catch(e:Exception){errorSetter(e.message?:"Erro")} },enabled=away.isNotBlank(),colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("SALVAR PARTIDA")}
+            Button(onClick={scope.launch { try { api.request("/api/mobile/matches","POST",JSONObject().put("home",home).put("away",away).put("home_score",hs.toInt()).put("away_score",ascore.toInt()));showAdd=false;refresh() } catch(e:Exception){errorSetter(e.message?:"Erro")} } },enabled=away.isNotBlank(),colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("SALVAR PARTIDA")}
         }
         LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(vertical=12.dp)) { items(jsonArray(data,"matches")) { m-> MatchCard(m) } }
     }
