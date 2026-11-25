@@ -115,9 +115,7 @@ private fun ArqueirosApp() {
     } else {
         Column(Modifier.fillMaxSize().background(Black)) {
             Row(Modifier.fillMaxWidth().background(Color(0xFF101116)).padding(horizontal=18.dp, vertical=13.dp), verticalAlignment=Alignment.CenterVertically) {
-                Box(Modifier.size(46.dp).background(Color(0xFF251015), RoundedCornerShape(14.dp)), contentAlignment=Alignment.Center) {
-                    Text("A", color=Red, fontSize=29.sp, fontWeight=FontWeight.Black)
-                }
+                BrandLogo(Modifier.size(48.dp))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text("ARQUEIROS", color=White, fontWeight=FontWeight.Black, fontSize=18.sp, letterSpacing=1.8.sp)
@@ -150,6 +148,18 @@ private fun ArqueirosApp() {
             }
         }
     }
+}
+
+@Composable
+private fun BrandLogo(modifier:Modifier=Modifier) {
+    val context=LocalContext.current
+    val logo=remember(context) { try {
+        val encoded=context.assets.open("arqueiros-logo.jpg.b64").bufferedReader().use{it.readText()}
+        val bytes=Base64.decode(encoded,Base64.DEFAULT)
+        BitmapFactory.decodeByteArray(bytes,0,bytes.size)?.asImageBitmap()
+    } catch (_:Exception) { null } }
+    if(logo!=null) Image(bitmap=logo,contentDescription="Arqueiros E-Sports",modifier=modifier,contentScale=ContentScale.Fit)
+    else Box(modifier.background(Color(0xFF251015),RoundedCornerShape(12.dp)),contentAlignment=Alignment.Center) { Text("A",color=Red,fontSize=25.sp,fontWeight=FontWeight.Black) }
 }
 
 @Composable
