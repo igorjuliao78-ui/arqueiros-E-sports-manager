@@ -135,16 +135,16 @@ private fun ArqueirosApp() {
                     "Início" -> HomePage(data, busy, ::refresh)
                     "Elenco" -> PlayersPage(data, api, scope, ::refresh, errorSetter={error=it})
                     "Partidas" -> MatchesPage(data, api, scope, ::refresh, errorSetter={error=it})
-                    "Ranking" -> RankingPage(data)
+                    "Competições" -> RankingPage(data)
                     else -> AdminPage(data, api, scope, ::refresh, errorSetter={error=it})
                 }
             }
             Row(Modifier.fillMaxWidth().background(Color(0xFF111217)).padding(horizontal=4.dp, vertical=7.dp), horizontalArrangement=Arrangement.SpaceEvenly) {
-                listOf("Início" to "⌂","Elenco" to "♟","Partidas" to "▣","Ranking" to "♛","Admin" to "☰").forEach { (item,glyph) ->
+                listOf("Início" to "⌂","Elenco" to "♟","Partidas" to "▣","Competições" to "♛","Mais" to "☰").forEach { (item,glyph) ->
                     val selected=page==item
                     Column(Modifier.weight(1f).clickable { page=item }.padding(vertical=4.dp), horizontalAlignment=Alignment.CenterHorizontally) {
                         Text(glyph, color=if(selected) Red else Muted, fontSize=20.sp, fontWeight=FontWeight.Bold)
-                        Text(if(item=="Admin") "Mais" else item, color=if(selected) Red else Muted, fontSize=9.sp, fontWeight=if(selected) FontWeight.Bold else FontWeight.Normal)
+                        Text(item, color=if(selected) Red else Muted, fontSize=9.sp, fontWeight=if(selected) FontWeight.Bold else FontWeight.Normal)
                     }
                 }
             }
@@ -310,14 +310,49 @@ private fun MatchesPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Corouti
 
 @Composable
 private fun RankingPage(data:JSONObject) {
-    val ranking=jsonArray(data,"player_ranking")
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("RANKING INDIVIDUAL",color=White,fontSize=22.sp,fontWeight=FontWeight.Black)
-        Text("Classificação por pontos, gols e desempenho",color=Muted,fontSize=12.sp)
-        LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(vertical=14.dp)) {
-            items(ranking) { p -> PanelCard { Row(verticalAlignment=Alignment.CenterVertically){Text("#${ranking.indexOf(p)+1}",color=Red,fontWeight=FontWeight.Black,modifier=Modifier.width(36.dp));Column(Modifier.weight(1f)){Text(p.optString("name"),color=White,fontWeight=FontWeight.Bold);Text("${p.optInt("games")} jogos • ${p.optInt("goals")} gols • ${p.optInt("assists")} assistências",color=Muted,fontSize=11.sp)};Text("${p.optInt("points")} pts",color=Red,fontWeight=FontWeight.Black)} } }
-        }
+ val ranking=jsonArray(data,"team_ranking").ifEmpty { jsonArray(data,"ranking").ifEmpty { jsonArray(data,"player_ranking") } }
+ Column(Modifier.fillMaxSize().background(Black).padding(horizontal=14.dp)) {
+  Text("Ranking",color=White,fontSize=22.sp,fontWeight=FontWeight.Black,modifier=Modifier.padding(top=14.dp))
+  Text("Classificação da temporada",color=Muted,fontSize=11.sp)
+  LazyColumn(verticalArrangement=Arrangement.spacedBy(6.dp),contentPadding=PaddingValues(vertical=12.dp)) {
+   items(ranking) { p ->
+    PanelCard(modifier=Modifier.background(if(ranking.indexOf(p)==0) Color(0xFF4D0A10) else Color(0xFF17181C),RoundedCornerShape(12.dp))) {
+     Row(verticalAlignment=Alignment.CenterVertically) {
+      Text("\${ranking.indexOf(p)+1}",color=if(ranking.indexOf(p)==0) Color(0xFFFFD166) else Muted,fontWeight=FontWeight.Black,modifier=Modifier.width(25.dp))
+      Box(Modifier.size(38.dp).background(Color(0xFF32141A),RoundedCornerShape(50)),contentAlignment=Alignment.Center) { Text(p.optString("name",p.optString("team","?")).take(1).uppercase(),color=White,fontWeight=FontWeight.Black) }
+      Spacer(Modifier.width(10.dp))
+      Column(Modifier.weight(1f)) { Text(p.optString("name",p.optString("team","Equipe")),color=White,fontWeight=FontWeight.Bold,fontSize=12.sp); Text("Classificação geral",color=Muted,fontSize=10.sp) }
+      Text("\${p.optInt("points",p.optInt("pts"))} pts",color=White,fontWeight=FontWeight.Bold,fontSize=12.sp)
+     }
     }
+   }
+  }
+ }
+}
+@Composable
+private fun StatisticsPage(data:JSONObject) {
+ val dash=data.optJSONObject("dashboard") ?: JSONObject()
+ val matches=jsonArray(data,"matches")
+ val players=jsonArray(data,"players")
+ val wins=dash.optInt("wins",matches.count{it.optInt("home_score")>it.optInt("away_score")})
+ val draws=dash.optInt("draws",matches.count{it.optInt("home_score")==it.optInt("away_score")})
+ val losses=dash.optInt("losses",matches.count{it.optInt("home_score")<it.optInt("away_score")})
+ val games=dash.optInt("matches",matches.size)
+ Column(Modifier.fillMaxSize().background(Black).padding(horizontal=14.dp)) {
+  Text("Estatísticas",color=White,fontSize=22.sp,fontWeight=FontWeight.Black,modifier=Modifier.padding(top=14.dp))
+  Text("Desempenho da equipe",color=Muted,fontSize=11.sp,modifier=Modifier.padding(bottom=12.dp))
+  Row(horizontalArrangement=Arrangement.spacedBy(7.dp),modifier=Modifier.padding(vertical=12.dp)) { StatCard("JOGOS",games.toString(),Modifier.weight(1f)); StatCard("VITÓRIAS",wins.toString(),Modifier.weight(1f)) }
+  Row(horizontalArrangement=Arrangement.spacedBy(7.dp)) { StatCard("EMPATES",draws.toString(),Modifier.weight(1f)); StatCard("DERROTAS",losses.toString(),Modifier.weight(1f)) }
+  Spacer(Modifier.height(14.dp)); SectionTitle("DESEMPENHO DA EQUIPE")
+  PanelCard {
+   val rate=if(games>0) (wins*100/games) else 0
+   Text("\$rate%",color=Color(0xFF35D477),fontSize=34.sp,fontWeight=FontWeight.Black)
+   Text("Aproveitamento • dados disponíveis",color=Muted,fontSize=10.sp)
+   LinearProgressIndicator(progress={rate/100f},modifier=Modifier.fillMaxWidth().height(8.dp),color=Color(0xFF35D477),trackColor=Color(0xFF33343A))
+  }
+  Spacer(Modifier.height(12.dp)); SectionTitle("ELENCO")
+  PanelCard { Text("\${players.size} jogadores cadastrados",color=White,fontSize=18.sp,fontWeight=FontWeight.Bold); Text("Estatísticas individuais disponíveis no cadastro de cada jogador.",color=Muted,fontSize=11.sp) }
+ }
 }
 
 @Composable
@@ -333,8 +368,9 @@ private fun AdminPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Coroutine
     }
     Column(Modifier.fillMaxSize().padding(horizontal=16.dp)) {
         Text("ADMINISTRAÇÃO",color=White,fontSize=22.sp,fontWeight=FontWeight.Black)
-        Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.padding(vertical=10.dp)){listOf("OCR","Pendências","Competições").forEach{t->Text(t,color=if(tab==t)White else Muted,modifier=Modifier.background(if(tab==t)Red else Panel,RoundedCornerShape(8.dp)).clickable{tab=t}.padding(10.dp),fontSize=11.sp,fontWeight=FontWeight.Bold)}}
+        Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.padding(vertical=10.dp)){listOf("OCR","Estatísticas","Pendências","Competições").forEach{t->Text(t,color=if(tab==t)White else Muted,modifier=Modifier.background(if(tab==t)Red else Panel,RoundedCornerShape(8.dp)).clickable{tab=t}.padding(10.dp),fontSize=11.sp,fontWeight=FontWeight.Bold)}}
         when(tab) {
+            "Estatísticas" -> { StatisticsPage(data) }
             "OCR" -> {
                 PanelCard {
                     Text("IMPORTAÇÃO INTELIGENTE",color=White,fontWeight=FontWeight.Bold)
