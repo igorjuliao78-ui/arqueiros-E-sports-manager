@@ -230,9 +230,10 @@ private fun AdminPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Coroutine
     var preview by remember { mutableStateOf<JSONObject?>(null) }
     var imageB64 by remember { mutableStateOf("") }
     var teamSide by remember { mutableStateOf("first") }
+    var selectedCompetitionId by remember { mutableStateOf("") }
     val context= LocalContext.current
     val picker= rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri:Uri? ->
-        if(uri!=null) scope.launch { try { val bytes=context.contentResolver.openInputStream(uri)?.use{it.readBytes()} ?: byteArrayOf(); imageB64=Base64.encodeToString(bytes,Base64.NO_WRAP); preview=api.request("/api/mobile/matches/image/preview","POST",JSONObject().put("image_base64",imageB64).put("team_side",teamSide)) } catch(e:Exception){errorSetter(e.message?:"Falha ao ler print")} }
+        if(uri!=null) scope.launch { try { val bytes=context.contentResolver.openInputStream(uri)?.use{it.readBytes()} ?: byteArrayOf(); imageB64=Base64.encodeToString(bytes,Base64.NO_WRAP); preview=api.request("/api/mobile/matches/image/preview","POST",JSONObject().put("image_base64",imageB64).put("team_side",teamSide)); selectedCompetitionId=preview?.optString("competition_id","") ?: "" } catch(e:Exception){errorSetter(e.message?:"Falha ao ler print")} }
     }
     Column(Modifier.fillMaxSize().padding(horizontal=16.dp)) {
         Text("ADMINISTRAÇÃO",color=White,fontSize=22.sp,fontWeight=FontWeight.Black)
@@ -256,10 +257,14 @@ private fun AdminPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Coroutine
                     Spacer(Modifier.height(10.dp)); PanelCard {
                         Text("PRÉ-VISUALIZAÇÃO • ${p.optInt("recognized")} jogadores",color=White,fontWeight=FontWeight.Bold)
                         Text("Adversário: ${p.optString("team")}",color=Muted,fontSize=12.sp)
+                        Text("COMPETIÇÃO (selecione para registrar)",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                        jsonArray(data,"competitions").forEach { comp ->
+                            Text((if(selectedCompetitionId==comp.optString("id")) "✓ " else "") + comp.optString("name"),color=if(selectedCompetitionId==comp.optString("id")) Red else White,fontSize=12.sp,modifier=Modifier.clickable { selectedCompetitionId=comp.optString("id") }.padding(vertical=3.dp))
+                        }
                         Text("Placar: ${scoreText(p.optJSONArray("scores"))}",color=Muted,fontSize=12.sp)
                         jsonArray(p,"stats").forEach { st -> Text("${st.optString("detected_name")}  ${st.optInt("goals_for")} x ${st.optInt("goals_against")}${if(st.optBoolean("is_new_player"))" • NOVO JOGADOR" else ""}",color=if(st.optBoolean("is_new_player"))Red else White,fontSize=12.sp,modifier=Modifier.padding(vertical=3.dp)) }
                         Text("Novos jogadores só serão incluídos após conferência administrativa.",color=Muted,fontSize=11.sp)
-                        Button(onClick={scope.launch { try { val payload=JSONObject(p.toString()).put("stats",p.optJSONArray("stats")?:JSONArray()).put("team_side",p.optString("team_side",teamSide)); val result=api.request("/api/mobile/matches/image/confirm","POST",payload); errorSetter("Importação enviada: ${result.optString("status","Pendente")}.");preview=null;refresh() } catch(e:Exception){errorSetter(e.message?:"Erro na importação")} } },colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("CONFIRMAR IMPORTAÇÃO")}
+                        Button(onClick={scope.launch { try { val payload=JSONObject(p.toString()).put("stats",p.optJSONArray("stats")?:JSONArray()).put("team_side",p.optString("team_side",teamSide)).put("competition_id",selectedCompetitionId.toIntOrNull() ?: p.optInt("competition_id")); val result=api.request("/api/mobile/matches/image/confirm","POST",payload); errorSetter("Importação enviada: ${result.optString("status","Pendente")}.");preview=null;refresh() } catch(e:Exception){errorSetter(e.message?:"Erro na importação")} } },colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("CONFIRMAR IMPORTAÇÃO")}
                     }
                 }
             }
