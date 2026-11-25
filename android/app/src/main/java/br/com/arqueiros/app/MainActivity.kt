@@ -1,6 +1,7 @@
 package br.com.arqueiros.app
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.util.Base64
@@ -9,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,10 +22,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -140,7 +146,11 @@ private fun ArqueirosApp() {
 private fun LoginScreen(busy:Boolean, error:String, onLogin:(String,String)->Unit) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    Column(Modifier.fillMaxSize().background(Black).padding(26.dp), verticalArrangement=Arrangement.Center) {
+    var showPassword by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val logo = remember(context) { try { val encoded=context.assets.open("arqueiros-logo.jpg.b64").bufferedReader().use{it.readText()}; BitmapFactory.decodeByteArray(Base64.decode(encoded,Base64.DEFAULT),0,Base64.decode(encoded,Base64.DEFAULT).size)?.asImageBitmap() } catch (_:Exception) { null } }
+    Column(Modifier.fillMaxSize().background(Black).padding(26.dp), verticalArrangement=Arrangement.Center, horizontalAlignment=Alignment.CenterHorizontally) {
+        if (logo != null) Image(bitmap=logo,contentDescription="Logo oficial Arqueiros",modifier=Modifier.fillMaxWidth().height(140.dp),contentScale=ContentScale.Fit)
         Text("ARQUEIROS", color=White, fontSize=32.sp, fontWeight=FontWeight.Black, letterSpacing=3.sp)
         Text("E-SPORTS MANAGER", color=Red, fontSize=13.sp, fontWeight=FontWeight.Bold, letterSpacing=3.sp)
         Spacer(Modifier.height(42.dp))
@@ -148,7 +158,7 @@ private fun LoginScreen(busy:Boolean, error:String, onLogin:(String,String)->Uni
         Spacer(Modifier.height(18.dp))
         Field("Usuário",username,{username=it})
         Spacer(Modifier.height(12.dp))
-        Field("Senha",password,{password=it},true)
+        Row(verticalAlignment=Alignment.CenterVertically) { Field("Senha",password,{password=it},!showPassword,Modifier.weight(1f)); Text(if(showPassword) "OCULTAR" else "MOSTRAR",color=Red,fontSize=10.sp,fontWeight=FontWeight.Bold,modifier=Modifier.clickable { showPassword=!showPassword }.padding(start=10.dp)) }
         if(error.isNotBlank()) Text(error,color=Color(0xFFFF7777),fontSize=12.sp,modifier=Modifier.padding(top=12.dp))
         Spacer(Modifier.height(22.dp))
         Button(onClick={onLogin(username.trim(),password)}, enabled=!busy && username.isNotBlank() && password.isNotBlank(), modifier=Modifier.fillMaxWidth().height(52.dp), colors=ButtonDefaults.buttonColors(containerColor=Red)) { Text(if(busy) "CONECTANDO..." else "ENTRAR",fontWeight=FontWeight.Bold) }
@@ -297,7 +307,7 @@ private fun AdminPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Coroutine
 @Composable private fun Field(label:String,value:String,onValue:(String)->Unit,password:Boolean=false,modifier:Modifier=Modifier) {
     Column(modifier.fillMaxWidth().background(Panel,RoundedCornerShape(10.dp)).padding(horizontal=13.dp,vertical=10.dp)) {
         Text(label,color=Muted,fontSize=10.sp)
-        BasicTextField(value=value,onValueChange=onValue,singleLine=true,textStyle=androidx.compose.ui.text.TextStyle(color=White,fontSize=14.sp),modifier=Modifier.fillMaxWidth().padding(top=5.dp))
+        BasicTextField(value=value,onValueChange=onValue,singleLine=true,visualTransformation=if(password) PasswordVisualTransformation() else VisualTransformation.None,textStyle=androidx.compose.ui.text.TextStyle(color=White,fontSize=14.sp),modifier=Modifier.fillMaxWidth().padding(top=5.dp))
     }
 }
 private fun jsonArray(obj:JSONObject,key:String):List<JSONObject>{val a=obj.optJSONArray(key)?:return emptyList();return (0 until a.length()).mapNotNull{a.optJSONObject(it)}}
