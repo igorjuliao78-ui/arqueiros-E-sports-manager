@@ -1,4 +1,4 @@
-package br.com.arqueiros.app
+package br.com.arqueiros.manager
 
 import android.graphics.BitmapFactory
 import android.util.Base64
