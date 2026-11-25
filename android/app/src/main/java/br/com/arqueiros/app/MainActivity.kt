@@ -229,9 +229,10 @@ private fun AdminPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Coroutine
     var tab by remember { mutableStateOf("OCR") }
     var preview by remember { mutableStateOf<JSONObject?>(null) }
     var imageB64 by remember { mutableStateOf("") }
+    var teamSide by remember { mutableStateOf("first") }
     val context= LocalContext.current
     val picker= rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri:Uri? ->
-        if(uri!=null) scope.launch { try { val bytes=context.contentResolver.openInputStream(uri)?.use{it.readBytes()} ?: byteArrayOf(); imageB64=Base64.encodeToString(bytes,Base64.NO_WRAP); preview=api.request("/api/mobile/matches/image/preview","POST",JSONObject().put("image_base64",imageB64).put("team_side","first")) } catch(e:Exception){errorSetter(e.message?:"Falha ao ler print")} }
+        if(uri!=null) scope.launch { try { val bytes=context.contentResolver.openInputStream(uri)?.use{it.readBytes()} ?: byteArrayOf(); imageB64=Base64.encodeToString(bytes,Base64.NO_WRAP); preview=api.request("/api/mobile/matches/image/preview","POST",JSONObject().put("image_base64",imageB64).put("team_side",teamSide)) } catch(e:Exception){errorSetter(e.message?:"Falha ao ler print")} }
     }
     Column(Modifier.fillMaxSize().padding(horizontal=16.dp)) {
         Text("ADMINISTRAÇÃO",color=White,fontSize=22.sp,fontWeight=FontWeight.Black)
@@ -241,6 +242,13 @@ private fun AdminPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Coroutine
                 PanelCard {
                     Text("IMPORTAÇÃO INTELIGENTE",color=White,fontWeight=FontWeight.Bold)
                     Text("Selecione o print do confronto. A leitura será apresentada para conferência antes de enviar.",color=Muted,fontSize=12.sp)
+                    Spacer(Modifier.height(10.dp))
+                    Text("A Arqueiros aparece em qual lado do print?",color=Muted,fontSize=11.sp)
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        listOf("first" to "PRIMEIRO LADO","second" to "SEGUNDO LADO").forEach { (value,label) ->
+                            Text(label,color=if(teamSide==value) White else Muted,modifier=Modifier.background(if(teamSide==value) Red else Black,RoundedCornerShape(8.dp)).clickable { teamSide=value }.padding(10.dp),fontSize=10.sp,fontWeight=FontWeight.Bold)
+                        }
+                    }
                     Spacer(Modifier.height(12.dp))
                     Button(onClick={picker.launch("image/*")},colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("SELECIONAR PRINT")}
                 }
@@ -248,10 +256,10 @@ private fun AdminPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Coroutine
                     Spacer(Modifier.height(10.dp)); PanelCard {
                         Text("PRÉ-VISUALIZAÇÃO • ${p.optInt("recognized")} jogadores",color=White,fontWeight=FontWeight.Bold)
                         Text("Adversário: ${p.optString("team")}",color=Muted,fontSize=12.sp)
-                        Text("Placar: ${jsonArray(p,"scores").joinToString(" x ")}",color=Muted,fontSize=12.sp)
+                        Text("Placar: ${scoreText(p.optJSONArray("scores"))}",color=Muted,fontSize=12.sp)
                         jsonArray(p,"stats").forEach { st -> Text("${st.optString("detected_name")}  ${st.optInt("goals_for")} x ${st.optInt("goals_against")}${if(st.optBoolean("is_new_player"))" • NOVO JOGADOR" else ""}",color=if(st.optBoolean("is_new_player"))Red else White,fontSize=12.sp,modifier=Modifier.padding(vertical=3.dp)) }
                         Text("Novos jogadores só serão incluídos após conferência administrativa.",color=Muted,fontSize=11.sp)
-                        Button(onClick={scope.launch { try { val payload=JSONObject(p.toString()).put("stats",p.optJSONArray("stats")?:JSONArray()).put("team_side","first"); val result=api.request("/api/mobile/matches/image/confirm","POST",payload); errorSetter("Importação enviada: ${result.optString("status","Pendente")}.");preview=null;refresh() } catch(e:Exception){errorSetter(e.message?:"Erro na importação")} },colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("CONFIRMAR IMPORTAÇÃO")}
+                        Button(onClick={scope.launch { try { val payload=JSONObject(p.toString()).put("stats",p.optJSONArray("stats")?:JSONArray()).put("team_side",p.optString("team_side",teamSide)); val result=api.request("/api/mobile/matches/image/confirm","POST",payload); errorSetter("Importação enviada: ${result.optString("status","Pendente")}.");preview=null;refresh() } catch(e:Exception){errorSetter(e.message?:"Erro na importação")} },colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("CONFIRMAR IMPORTAÇÃO")}
                     }
                 }
             }
@@ -288,3 +296,4 @@ private fun AdminPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Coroutine
     }
 }
 private fun jsonArray(obj:JSONObject,key:String):List<JSONObject>{val a=obj.optJSONArray(key)?:return emptyList();return (0 until a.length()).mapNotNull{a.optJSONObject(it)}}
+\nprivate fun scoreText(a:JSONArray?):String { if(a==null || a.length()<2) return "Não identificado"; return "${a.opt(0)} x ${a.opt(1)}" }\n
