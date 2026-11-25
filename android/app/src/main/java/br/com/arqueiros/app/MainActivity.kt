@@ -114,29 +114,39 @@ private fun ArqueirosApp() {
         }
     } else {
         Column(Modifier.fillMaxSize().background(Black)) {
-            Row(Modifier.fillMaxWidth().background(Color(0xFF11131A)).padding(horizontal=18.dp, vertical=16.dp), verticalAlignment=Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("ARQUEIROS", color=White, fontWeight=FontWeight.Black, fontSize=21.sp, letterSpacing=2.sp)
-                    Text("E-SPORTS MANAGER", color=Red, fontSize=10.sp, fontWeight=FontWeight.Bold, letterSpacing=2.sp)
+            Row(Modifier.fillMaxWidth().background(Color(0xFF101116)).padding(horizontal=18.dp, vertical=13.dp), verticalAlignment=Alignment.CenterVertically) {
+                Box(Modifier.size(46.dp).background(Color(0xFF251015), RoundedCornerShape(14.dp)), contentAlignment=Alignment.Center) {
+                    Text("A", color=Red, fontSize=29.sp, fontWeight=FontWeight.Black)
                 }
-                Text("● ONLINE", color=Color(0xFF69C58B), fontSize=11.sp, fontWeight=FontWeight.Bold)
                 Spacer(Modifier.width(12.dp))
-                Text("SAIR", color=Muted, modifier=Modifier.clickable { api.token=null; logged=false }.padding(6.dp), fontSize=11.sp)
-            }
-            Row(Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=8.dp), horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                listOf("Início","Elenco","Partidas","Ranking","Admin").forEach { item ->
-                    val selected = page==item
-                    Text(item, color=if(selected) White else Muted, fontSize=11.sp, fontWeight=FontWeight.Bold,
-                        modifier=Modifier.weight(1f).background(if(selected) Red else Panel, RoundedCornerShape(9.dp)).clickable { page=item }.padding(vertical=12.dp), textAlign=androidx.compose.ui.text.style.TextAlign.Center)
+                Column(Modifier.weight(1f)) {
+                    Text("ARQUEIROS", color=White, fontWeight=FontWeight.Black, fontSize=18.sp, letterSpacing=1.8.sp)
+                    Text("E-SPORTS MANAGER", color=Red, fontSize=9.sp, fontWeight=FontWeight.Bold, letterSpacing=2.sp)
                 }
+                Box(Modifier.size(9.dp).background(Color(0xFF48D18A), RoundedCornerShape(50)))
+                Spacer(Modifier.width(7.dp))
+                Text(user.optString("name","EQUIPE").uppercase().take(13), color=Muted, fontSize=10.sp, fontWeight=FontWeight.Bold)
+                Spacer(Modifier.width(8.dp))
+                Text("⋮", color=White, fontSize=24.sp, modifier=Modifier.clickable { api.token=null; logged=false }.padding(horizontal=5.dp))
             }
             if (error.isNotBlank()) Text(error, color=Color(0xFFFF7777), modifier=Modifier.padding(horizontal=16.dp, vertical=6.dp), fontSize=12.sp)
-            when(page) {
-                "Início" -> HomePage(data, busy, ::refresh)
-                "Elenco" -> PlayersPage(data, api, scope, ::refresh, errorSetter={error=it})
-                "Partidas" -> MatchesPage(data, api, scope, ::refresh, errorSetter={error=it})
-                "Ranking" -> RankingPage(data)
-                else -> AdminPage(data, api, scope, ::refresh, errorSetter={error=it})
+            Box(Modifier.weight(1f)) {
+                when(page) {
+                    "Início" -> HomePage(data, busy, ::refresh)
+                    "Elenco" -> PlayersPage(data, api, scope, ::refresh, errorSetter={error=it})
+                    "Partidas" -> MatchesPage(data, api, scope, ::refresh, errorSetter={error=it})
+                    "Ranking" -> RankingPage(data)
+                    else -> AdminPage(data, api, scope, ::refresh, errorSetter={error=it})
+                }
+            }
+            Row(Modifier.fillMaxWidth().background(Color(0xFF111217)).padding(horizontal=4.dp, vertical=7.dp), horizontalArrangement=Arrangement.SpaceEvenly) {
+                listOf("Início" to "⌂","Elenco" to "♟","Partidas" to "▣","Ranking" to "♛","Admin" to "☰").forEach { (item,glyph) ->
+                    val selected=page==item
+                    Column(Modifier.weight(1f).clickable { page=item }.padding(vertical=4.dp), horizontalAlignment=Alignment.CenterHorizontally) {
+                        Text(glyph, color=if(selected) Red else Muted, fontSize=20.sp, fontWeight=FontWeight.Bold)
+                        Text(if(item=="Admin") "Mais" else item, color=if(selected) Red else Muted, fontSize=9.sp, fontWeight=if(selected) FontWeight.Bold else FontWeight.Normal)
+                    }
+                }
             }
         }
     }
@@ -149,20 +159,25 @@ private fun LoginScreen(busy:Boolean, error:String, onLogin:(String,String)->Uni
     var showPassword by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val logo = remember(context) { try { val encoded=context.assets.open("arqueiros-logo.jpg.b64").bufferedReader().use{it.readText()}; BitmapFactory.decodeByteArray(Base64.decode(encoded,Base64.DEFAULT),0,Base64.decode(encoded,Base64.DEFAULT).size)?.asImageBitmap() } catch (_:Exception) { null } }
-    Column(Modifier.fillMaxSize().background(Black).padding(26.dp), verticalArrangement=Arrangement.Center, horizontalAlignment=Alignment.CenterHorizontally) {
-        if (logo != null) Image(bitmap=logo,contentDescription="Logo oficial Arqueiros",modifier=Modifier.fillMaxWidth().height(140.dp),contentScale=ContentScale.Fit)
-        Text("ARQUEIROS", color=White, fontSize=32.sp, fontWeight=FontWeight.Black, letterSpacing=3.sp)
-        Text("E-SPORTS MANAGER", color=Red, fontSize=13.sp, fontWeight=FontWeight.Bold, letterSpacing=3.sp)
-        Spacer(Modifier.height(42.dp))
-        Text("ACESSO À EQUIPE", color=White, fontSize=19.sp, fontWeight=FontWeight.Bold)
-        Spacer(Modifier.height(18.dp))
-        Field("Usuário",username,{username=it})
+    Column(Modifier.fillMaxSize().background(Black).padding(horizontal=25.dp), verticalArrangement=Arrangement.Center, horizontalAlignment=Alignment.CenterHorizontally) {
+        Box(Modifier.fillMaxWidth().height(5.dp).background(Red, RoundedCornerShape(50)))
+        Spacer(Modifier.height(25.dp))
+        if (logo != null) Image(bitmap=logo,contentDescription="Logo oficial Arqueiros",modifier=Modifier.fillMaxWidth().height(190.dp),contentScale=ContentScale.Fit)
+        Text("ARQUEIROS", color=White, fontSize=31.sp, fontWeight=FontWeight.Black, letterSpacing=3.sp)
+        Text("E-SPORTS MANAGER", color=Red, fontSize=12.sp, fontWeight=FontWeight.ExtraBold, letterSpacing=3.sp)
+        Spacer(Modifier.height(28.dp))
+        Text("BEM-VINDO DE VOLTA!", color=White, fontSize=20.sp, fontWeight=FontWeight.Black)
+        Text("Faça login para continuar", color=Muted, fontSize=12.sp)
+        Spacer(Modifier.height(24.dp))
+        Field("Usuário ou E-mail",username,{username=it})
         Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment=Alignment.CenterVertically) { Field("Senha",password,{password=it},!showPassword,Modifier.weight(1f)); Text(if(showPassword) "OCULTAR" else "MOSTRAR",color=Red,fontSize=10.sp,fontWeight=FontWeight.Bold,modifier=Modifier.clickable { showPassword=!showPassword }.padding(start=10.dp)) }
+        Row(verticalAlignment=Alignment.CenterVertically) { Field("Senha",password,{password=it},!showPassword,Modifier.weight(1f)); Text(if(showPassword) "OCULTAR" else "MOSTRAR",color=Red,fontSize=9.sp,fontWeight=FontWeight.Bold,modifier=Modifier.clickable { showPassword=!showPassword }.padding(start=9.dp)) }
         if(error.isNotBlank()) Text(error,color=Color(0xFFFF7777),fontSize=12.sp,modifier=Modifier.padding(top=12.dp))
-        Spacer(Modifier.height(22.dp))
-        Button(onClick={onLogin(username.trim(),password)}, enabled=!busy && username.isNotBlank() && password.isNotBlank(), modifier=Modifier.fillMaxWidth().height(52.dp), colors=ButtonDefaults.buttonColors(containerColor=Red)) { Text(if(busy) "CONECTANDO..." else "ENTRAR",fontWeight=FontWeight.Bold) }
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(20.dp))
+        Button(onClick={onLogin(username.trim(),password)}, enabled=!busy && username.isNotBlank() && password.isNotBlank(), modifier=Modifier.fillMaxWidth().height(54.dp), shape=RoundedCornerShape(13.dp), colors=ButtonDefaults.buttonColors(containerColor=Red)) { Text(if(busy) "CONECTANDO..." else "ENTRAR",fontWeight=FontWeight.Black, letterSpacing=1.sp) }
+        Spacer(Modifier.height(24.dp))
+        Text("──────────────  ACESSO SEGURO  ──────────────",color=Muted,fontSize=9.sp)
+        Spacer(Modifier.height(15.dp))
         Text("Gestão oficial • Arqueiros E-Sports",color=Muted,fontSize=11.sp)
     }
 }
@@ -170,17 +185,49 @@ private fun LoginScreen(busy:Boolean, error:String, onLogin:(String,String)->Uni
 @Composable
 private fun HomePage(data:JSONObject,busy:Boolean,refresh:()->Unit) {
     val dash=data.optJSONObject("dashboard") ?: JSONObject()
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal=16.dp), verticalArrangement=Arrangement.spacedBy(12.dp), contentPadding=PaddingValues(bottom=28.dp)) {
-        item { Spacer(Modifier.height(4.dp)); Text("PAINEL GERAL",color=White,fontSize=22.sp,fontWeight=FontWeight.Black); Text("Visão geral da operação da equipe",color=Muted,fontSize=12.sp) }
+    val matches=jsonArray(data,"matches")
+    LazyColumn(Modifier.fillMaxSize().padding(horizontal=16.dp), verticalArrangement=Arrangement.spacedBy(13.dp), contentPadding=PaddingValues(top=13.dp,bottom=26.dp)) {
         item {
-            val cards=listOf("JOGADORES" to dash.optInt("players"),"COMPETIÇÕES" to dash.optInt("competitions"),"PARTIDAS" to dash.optInt("approved"),"PENDENTES" to dash.optInt("pending"),"TÍTULOS" to dash.optInt("titles"))
-            Column(verticalArrangement=Arrangement.spacedBy(9.dp)) {
-                cards.chunked(2).forEach { row -> Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) { row.forEach { (label,value)-> StatCard(label,value.toString(),Modifier.weight(1f)) }; if(row.size==1) Spacer(Modifier.weight(1f)) } }
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("PAINEL DA EQUIPE",color=White,fontSize=22.sp,fontWeight=FontWeight.Black,letterSpacing=.4.sp)
+                    Text("Sua central de comando",color=Muted,fontSize=12.sp)
+                }
+                Text("↻",color=White,fontSize=23.sp,modifier=Modifier.background(Panel,RoundedCornerShape(12.dp)).clickable { refresh() }.padding(horizontal=13.dp,vertical=8.dp))
             }
         }
-        item { SectionTitle("ÚLTIMAS PARTIDAS") }
-        items(jsonArray(data,"matches").take(8)) { m -> MatchCard(m) }
-        item { Button(onClick=refresh,enabled=!busy,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Red)){Text(if(busy)"ATUALIZANDO..." else "ATUALIZAR DADOS")} }
+        item {
+            Column(Modifier.fillMaxWidth().background(Color(0xFF310D14),RoundedCornerShape(20.dp)).padding(17.dp)) {
+                Text("PRÓXIMO CONFRONTO",color=Color(0xFFFFB9BF),fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.2.sp)
+                Spacer(Modifier.height(13.dp))
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally) {
+                        Text("♛",color=White,fontSize=29.sp,fontWeight=FontWeight.Black)
+                        Text("ARQUEIROS",color=White,fontSize=10.sp,fontWeight=FontWeight.Black)
+                    }
+                    Column(horizontalAlignment=Alignment.CenterHorizontally) {
+                        Text("VS",color=Color(0xFFFFC6CB),fontSize=19.sp,fontWeight=FontWeight.Black)
+                        Text("E-SPORTS",color=Color(0xFFFFA6AE),fontSize=8.sp)
+                    }
+                    Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally) {
+                        Text("⚔",color=White,fontSize=29.sp)
+                        Text(matches.firstOrNull()?.optString("away","ADVERSÁRIO")?.uppercase() ?: "ADVERSÁRIO",color=White,fontSize=10.sp,fontWeight=FontWeight.Black)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(if(matches.isNotEmpty()) matches.first().optString("competition","Confronto da equipe") else "Acompanhe os próximos desafios da equipe",color=Color(0xFFFFC6CB),fontSize=10.sp)
+            }
+        }
+        item { SectionTitle("RESUMO DA TEMPORADA") }
+        item {
+            val cards=listOf("JOGADORES" to dash.optInt("players"),"COMPETIÇÕES" to dash.optInt("competitions"),"PARTIDAS" to dash.optInt("approved"),"PENDENTES" to dash.optInt("pending"))
+            Column(verticalArrangement=Arrangement.spacedBy(9.dp)) {
+                cards.chunked(2).forEach { row -> Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) { row.forEach { (label,value)-> StatCard(label,value.toString(),Modifier.weight(1f)) } } }
+            }
+        }
+        item { SectionTitle("ÚLTIMOS RESULTADOS") }
+        items(matches.take(6)) { m -> MatchCard(m) }
+        item { Button(onClick=refresh,enabled=!busy,modifier=Modifier.fillMaxWidth().height(48.dp),shape=RoundedCornerShape(13.dp),colors=ButtonDefaults.buttonColors(containerColor=Red)){Text(if(busy)"ATUALIZANDO..." else "ATUALIZAR DADOS",fontWeight=FontWeight.Bold)} }
     }
 }
 
@@ -295,15 +342,23 @@ private fun AdminPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Coroutine
 @Composable private fun MatchCard(m:JSONObject) {
     PanelCard {
         Row(verticalAlignment=Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text(m.optString("home")+"  ×  "+m.optString("away"),color=White,fontWeight=FontWeight.Bold,fontSize=13.sp);Text(m.optString("competition","Sem competição"),color=Muted,fontSize=10.sp) }
-            Text("${m.opt("home_score")?: "-"} : ${m.opt("away_score")?: "-"}",color=Red,fontWeight=FontWeight.Black,fontSize=18.sp)
+            Column(Modifier.weight(1f)) { Text(m.optString("home","ARQUEIROS"),color=White,fontWeight=FontWeight.Bold,fontSize=12.sp); Text("vs  "+m.optString("away","Adversário"),color=Muted,fontSize=11.sp);Text(m.optString("competition","Sem competição"),color=Muted,fontSize=9.sp) }
+            Column(horizontalAlignment=Alignment.End) {
+                Text("${m.opt("home_score")?: "-"}  :  ${m.opt("away_score")?: "-"}",color=Red,fontWeight=FontWeight.Black,fontSize=20.sp)
+                Text(m.optString("status",""),color=Muted,fontSize=9.sp)
+            }
         }
-        Text(m.optString("status"),color=Muted,fontSize=10.sp)
     }
 }
-@Composable private fun StatCard(label:String,value:String,modifier:Modifier=Modifier) { PanelCard(modifier){Text(label,color=Muted,fontSize=10.sp,fontWeight=FontWeight.Bold);Text(value,color=White,fontSize=27.sp,fontWeight=FontWeight.Black)} }
-@Composable private fun SectionTitle(value:String){Text(value,color=White,fontSize=14.sp,fontWeight=FontWeight.Bold)}
-@Composable private fun PanelCard(modifier:Modifier=Modifier,content:@Composable ColumnScope.()->Unit){Column(modifier.fillMaxWidth().background(Panel,RoundedCornerShape(13.dp)).padding(14.dp),verticalArrangement=Arrangement.spacedBy(6.dp),content=content)}
+@Composable private fun StatCard(label:String,value:String,modifier:Modifier=Modifier) {
+    Column(modifier.fillMaxWidth().background(Panel,RoundedCornerShape(15.dp)).padding(15.dp)) {
+        Text(label,color=Muted,fontSize=9.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=.8.sp)
+        Text(value,color=White,fontSize=27.sp,fontWeight=FontWeight.Black)
+        Box(Modifier.fillMaxWidth(.42f).height(3.dp).background(Red,RoundedCornerShape(8.dp)))
+    }
+}
+@Composable private fun SectionTitle(value:String){Text(value,color=White,fontSize=13.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=.8.sp)}
+@Composable private fun PanelCard(modifier:Modifier=Modifier,content:@Composable ColumnScope.()->Unit){Column(modifier.fillMaxWidth().background(Panel,RoundedCornerShape(16.dp)).padding(15.dp),verticalArrangement=Arrangement.spacedBy(7.dp),content=content)}
 @Composable private fun Field(label:String,value:String,onValue:(String)->Unit,password:Boolean=false,modifier:Modifier=Modifier) {
     Column(modifier.fillMaxWidth().background(Panel,RoundedCornerShape(10.dp)).padding(horizontal=13.dp,vertical=10.dp)) {
         Text(label,color=Muted,fontSize=10.sp)
