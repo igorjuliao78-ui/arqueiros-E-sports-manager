@@ -217,7 +217,7 @@ private fun LoginScreen(busy:Boolean, error:String, onLogin:(String,String)->Uni
 private fun HomePage(data:JSONObject,busy:Boolean,refresh:()->Unit) {
     val dash=data.optJSONObject("dashboard") ?: JSONObject()
     val matches=jsonArray(data,"matches")
-    val next=matches.firstOrNull()
+    val next=matches.firstOrNull { val st=it.optString("status").lowercase(); st.contains("agend") || st.contains("scheduled") || st.contains("upcoming") }
     LazyColumn(Modifier.fillMaxSize().background(Black).padding(horizontal=14.dp),verticalArrangement=Arrangement.spacedBy(12.dp),contentPadding=PaddingValues(top=14.dp,bottom=20.dp)) {
         item {
             Row(verticalAlignment=Alignment.CenterVertically) {
@@ -344,9 +344,9 @@ private fun StatisticsPage(data:JSONObject) {
  val dash=data.optJSONObject("dashboard") ?: JSONObject()
  val matches=jsonArray(data,"matches")
  val players=jsonArray(data,"players")
- val wins=dash.optInt("wins",matches.count{it.optInt("home_score")>it.optInt("away_score")})
- val draws=dash.optInt("draws",matches.count{it.optInt("home_score")==it.optInt("away_score")})
- val losses=dash.optInt("losses",matches.count{it.optInt("home_score")<it.optInt("away_score")})
+ val wins=dash.optInt("wins",matches.count{ val h=it.optString("home").contains("arqueiros",true); val a=it.optString("away").contains("arqueiros",true); if(h) it.optInt("home_score")>it.optInt("away_score") else if(a) it.optInt("away_score")>it.optInt("home_score") else false })
+ val draws=dash.optInt("draws",matches.count{it.opt("home_score")!=null && it.opt("away_score")!=null && it.optInt("home_score")==it.optInt("away_score")})
+ val losses=dash.optInt("losses",matches.count{ val h=it.optString("home").contains("arqueiros",true); val a=it.optString("away").contains("arqueiros",true); if(h) it.optInt("home_score")<it.optInt("away_score") else if(a) it.optInt("away_score")<it.optInt("home_score") else false })
  val games=dash.optInt("matches",matches.size)
  Column(Modifier.fillMaxSize().background(Black).padding(horizontal=14.dp)) {
   Text("Estatísticas",color=White,fontSize=22.sp,fontWeight=FontWeight.Black,modifier=Modifier.padding(top=14.dp))
