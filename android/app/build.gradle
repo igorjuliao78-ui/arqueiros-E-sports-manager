@@ -18,3 +18,18 @@ dependencies {
  implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
  implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3'
 }
+ 
+// Gera o ícone do launcher a partir da arte oficial já versionada no projeto.
+def launcherResDir = layout.buildDirectory.dir("generated/launcherRes")
+tasks.register("generateLauncherIcon") {
+    inputs.file("src/main/assets/arqueiros-logo.jpg.b64")
+    outputs.file(launcherResDir.map { it.file("drawable/ic_launcher.jpg") })
+    doLast {
+        def iconFile = launcherResDir.get().file("drawable/ic_launcher.jpg").asFile
+        iconFile.parentFile.mkdirs()
+        def encoded = file("src/main/assets/arqueiros-logo.jpg.b64").text.replaceAll("\\s", "")
+        iconFile.bytes = java.util.Base64.getDecoder().decode(encoded)
+    }
+}
+android.sourceSets.main.res.srcDir(launcherResDir)
+tasks.named("preBuild").configure { dependsOn("generateLauncherIcon") }
