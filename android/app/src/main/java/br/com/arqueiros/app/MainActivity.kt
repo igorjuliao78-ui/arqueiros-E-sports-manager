@@ -259,7 +259,7 @@ private fun AdminPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Coroutine
                         Text("Placar: ${scoreText(p.optJSONArray("scores"))}",color=Muted,fontSize=12.sp)
                         jsonArray(p,"stats").forEach { st -> Text("${st.optString("detected_name")}  ${st.optInt("goals_for")} x ${st.optInt("goals_against")}${if(st.optBoolean("is_new_player"))" • NOVO JOGADOR" else ""}",color=if(st.optBoolean("is_new_player"))Red else White,fontSize=12.sp,modifier=Modifier.padding(vertical=3.dp)) }
                         Text("Novos jogadores só serão incluídos após conferência administrativa.",color=Muted,fontSize=11.sp)
-                        Button(onClick={scope.launch { try { val payload=JSONObject(p.toString()).put("stats",p.optJSONArray("stats")?:JSONArray()).put("team_side",p.optString("team_side",teamSide)); val result=api.request("/api/mobile/matches/image/confirm","POST",payload); errorSetter("Importação enviada: ${result.optString("status","Pendente")}.");preview=null;refresh() } catch(e:Exception){errorSetter(e.message?:"Erro na importação")} },colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("CONFIRMAR IMPORTAÇÃO")}
+                        Button(onClick={scope.launch { try { val payload=JSONObject(p.toString()).put("stats",p.optJSONArray("stats")?:JSONArray()).put("team_side",p.optString("team_side",teamSide)); val result=api.request("/api/mobile/matches/image/confirm","POST",payload); errorSetter("Importação enviada: ${result.optString("status","Pendente")}.");preview=null;refresh() } catch(e:Exception){errorSetter(e.message?:"Erro na importação")} } },colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("CONFIRMAR IMPORTAÇÃO")}
                     }
                 }
             }
