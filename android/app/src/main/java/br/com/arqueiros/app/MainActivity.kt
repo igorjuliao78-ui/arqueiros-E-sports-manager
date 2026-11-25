@@ -296,4 +296,5 @@ private fun AdminPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Coroutine
     }
 }
 private fun jsonArray(obj:JSONObject,key:String):List<JSONObject>{val a=obj.optJSONArray(key)?:return emptyList();return (0 until a.length()).mapNotNull{a.optJSONObject(it)}}
-\nprivate fun scoreText(a:JSONArray?):String { if(a==null || a.length()<2) return "Não identificado"; return "${a.opt(0)} x ${a.opt(1)}" }\n
+
+private fun scoreText(a:JSONArray?):String { if(a==null || a.length()<2) return "Não identificado"; return "${a.opt(0)} x ${a.opt(1)}" }
