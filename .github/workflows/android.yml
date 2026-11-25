@@ -1,7 +1,7 @@
 name: Android APK
 on:
   push:
-    branches: [main, "rebuild/**"]
+    branches: [main, "rebuild/**", "design/**"]
     paths:
       - "android/**"
       - ".github/workflows/android.yml"
