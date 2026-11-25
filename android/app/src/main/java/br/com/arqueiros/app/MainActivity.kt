@@ -158,103 +158,142 @@ private fun LoginScreen(busy:Boolean, error:String, onLogin:(String,String)->Uni
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    val logo = remember(context) { try { val encoded=context.assets.open("arqueiros-logo.jpg.b64").bufferedReader().use{it.readText()}; BitmapFactory.decodeByteArray(Base64.decode(encoded,Base64.DEFAULT),0,Base64.decode(encoded,Base64.DEFAULT).size)?.asImageBitmap() } catch (_:Exception) { null } }
-    Column(Modifier.fillMaxSize().background(Black).padding(horizontal=25.dp), verticalArrangement=Arrangement.Center, horizontalAlignment=Alignment.CenterHorizontally) {
-        Box(Modifier.fillMaxWidth().height(5.dp).background(Red, RoundedCornerShape(50)))
-        Spacer(Modifier.height(25.dp))
-        if (logo != null) Image(bitmap=logo,contentDescription="Logo oficial Arqueiros",modifier=Modifier.fillMaxWidth().height(190.dp),contentScale=ContentScale.Fit)
-        Text("ARQUEIROS", color=White, fontSize=31.sp, fontWeight=FontWeight.Black, letterSpacing=3.sp)
-        Text("E-SPORTS MANAGER", color=Red, fontSize=12.sp, fontWeight=FontWeight.ExtraBold, letterSpacing=3.sp)
-        Spacer(Modifier.height(28.dp))
-        Text("BEM-VINDO DE VOLTA!", color=White, fontSize=20.sp, fontWeight=FontWeight.Black)
-        Text("Faça login para continuar", color=Muted, fontSize=12.sp)
-        Spacer(Modifier.height(24.dp))
-        Field("Usuário ou E-mail",username,{username=it})
-        Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment=Alignment.CenterVertically) { Field("Senha",password,{password=it},!showPassword,Modifier.weight(1f)); Text(if(showPassword) "OCULTAR" else "MOSTRAR",color=Red,fontSize=9.sp,fontWeight=FontWeight.Bold,modifier=Modifier.clickable { showPassword=!showPassword }.padding(start=9.dp)) }
-        if(error.isNotBlank()) Text(error,color=Color(0xFFFF7777),fontSize=12.sp,modifier=Modifier.padding(top=12.dp))
-        Spacer(Modifier.height(20.dp))
-        Button(onClick={onLogin(username.trim(),password)}, enabled=!busy && username.isNotBlank() && password.isNotBlank(), modifier=Modifier.fillMaxWidth().height(54.dp), shape=RoundedCornerShape(13.dp), colors=ButtonDefaults.buttonColors(containerColor=Red)) { Text(if(busy) "CONECTANDO..." else "ENTRAR",fontWeight=FontWeight.Black, letterSpacing=1.sp) }
-        Spacer(Modifier.height(24.dp))
-        Text("──────────────  ACESSO SEGURO  ──────────────",color=Muted,fontSize=9.sp)
-        Spacer(Modifier.height(15.dp))
-        Text("Gestão oficial • Arqueiros E-Sports",color=Muted,fontSize=11.sp)
+    val logo = remember(context) { try {
+        val encoded=context.assets.open("arqueiros-logo.jpg.b64").bufferedReader().use{it.readText()}
+        val bytes=Base64.decode(encoded,Base64.DEFAULT)
+        BitmapFactory.decodeByteArray(bytes,0,bytes.size)?.asImageBitmap()
+    } catch (_:Exception) { null } }
+    Box(Modifier.fillMaxSize().background(Black)) {
+        Column(Modifier.fillMaxSize().padding(horizontal=25.dp), verticalArrangement=Arrangement.Center, horizontalAlignment=Alignment.CenterHorizontally) {
+            Box(Modifier.fillMaxWidth().height(4.dp).background(Red,RoundedCornerShape(50)))
+            Spacer(Modifier.height(24.dp))
+            if (logo != null) Image(bitmap=logo,contentDescription="Logo Arqueiros",modifier=Modifier.fillMaxWidth().height(176.dp),contentScale=ContentScale.Fit)
+            else Text("ARQUEIROS",color=White,fontSize=34.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
+            Text("E-SPORTS MANAGER",color=Red,fontSize=13.sp,fontWeight=FontWeight.Black,letterSpacing=3.sp)
+            Spacer(Modifier.height(28.dp))
+            Text("Bem-vindo de volta!",color=White,fontSize=22.sp,fontWeight=FontWeight.Black)
+            Text("Faça login para continuar",color=Muted,fontSize=13.sp)
+            Spacer(Modifier.height(25.dp))
+            Column(Modifier.fillMaxWidth().background(Color(0xFF202124),RoundedCornerShape(13.dp)).padding(horizontal=15.dp,vertical=4.dp)) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text("♙",color=Muted,fontSize=20.sp)
+                    Spacer(Modifier.width(12.dp))
+                    BasicTextField(username,{username=it},singleLine=true,textStyle=androidx.compose.ui.text.TextStyle(color=White,fontSize=14.sp),modifier=Modifier.fillMaxWidth().padding(vertical=15.dp),decorationBox={inner->Box { if(username.isEmpty()) Text("Usuário ou E-mail",color=Muted,fontSize=14.sp); inner() }})
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Column(Modifier.fillMaxWidth().background(Color(0xFF202124),RoundedCornerShape(13.dp)).padding(horizontal=15.dp,vertical=4.dp)) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text("▣",color=Muted,fontSize=18.sp)
+                    Spacer(Modifier.width(12.dp))
+                    BasicTextField(password,{password=it},singleLine=true,visualTransformation=if(showPassword) VisualTransformation.None else PasswordVisualTransformation(),textStyle=androidx.compose.ui.text.TextStyle(color=White,fontSize=14.sp),modifier=Modifier.weight(1f).padding(vertical=15.dp),decorationBox={inner->Box { if(password.isEmpty()) Text("Senha",color=Muted,fontSize=14.sp); inner() }})
+                    Text(if(showPassword) "◉" else "⊘",color=Muted,modifier=Modifier.clickable{showPassword=!showPassword}.padding(6.dp))
+                }
+            }
+            if(error.isNotBlank()) Text(error,color=Color(0xFFFF7777),fontSize=12.sp,modifier=Modifier.padding(top=10.dp))
+            Spacer(Modifier.height(20.dp))
+            Button(onClick={onLogin(username.trim(),password)},enabled=!busy && username.isNotBlank() && password.isNotBlank(),modifier=Modifier.fillMaxWidth().height(52.dp),shape=RoundedCornerShape(13.dp),colors=ButtonDefaults.buttonColors(containerColor=Color(0xFFE50914))) {
+                Text(if(busy) "CONECTANDO..." else "ENTRAR",fontWeight=FontWeight.Black,fontSize=15.sp)
+            }
+            Spacer(Modifier.height(18.dp))
+            Text("──────────────    ou    ──────────────",color=Muted,fontSize=10.sp)
+            Spacer(Modifier.height(14.dp))
+            Text("Gestão oficial • Arqueiros E-Sports",color=Muted,fontSize=11.sp)
+            Text("Juntos somos mais fortes!",color=Muted,fontSize=10.sp)
+        }
     }
 }
-
 @Composable
 private fun HomePage(data:JSONObject,busy:Boolean,refresh:()->Unit) {
     val dash=data.optJSONObject("dashboard") ?: JSONObject()
     val matches=jsonArray(data,"matches")
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal=16.dp), verticalArrangement=Arrangement.spacedBy(13.dp), contentPadding=PaddingValues(top=13.dp,bottom=26.dp)) {
+    val next=matches.firstOrNull()
+    LazyColumn(Modifier.fillMaxSize().background(Black).padding(horizontal=14.dp),verticalArrangement=Arrangement.spacedBy(12.dp),contentPadding=PaddingValues(top=14.dp,bottom=20.dp)) {
         item {
             Row(verticalAlignment=Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("PAINEL DA EQUIPE",color=White,fontSize=22.sp,fontWeight=FontWeight.Black,letterSpacing=.4.sp)
-                    Text("Sua central de comando",color=Muted,fontSize=12.sp)
+                    Text("PAINEL DA EQUIPE",color=White,fontSize=20.sp,fontWeight=FontWeight.Black)
+                    Text("Sua central de comando",color=Muted,fontSize=11.sp)
                 }
-                Text("↻",color=White,fontSize=23.sp,modifier=Modifier.background(Panel,RoundedCornerShape(12.dp)).clickable { refresh() }.padding(horizontal=13.dp,vertical=8.dp))
+                Text("●",color=Color(0xFF35D477),fontSize=12.sp)
+                Text("  ⋮",color=White,fontSize=24.sp,modifier=Modifier.clickable{refresh()}.padding(horizontal=6.dp))
             }
         }
         item {
-            Column(Modifier.fillMaxWidth().background(Color(0xFF310D14),RoundedCornerShape(20.dp)).padding(17.dp)) {
-                Text("PRÓXIMO CONFRONTO",color=Color(0xFFFFB9BF),fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.2.sp)
+            Column(Modifier.fillMaxWidth().background(Color(0xFF5B080D),RoundedCornerShape(18.dp)).padding(16.dp)) {
+                Text("▣  PRÓXIMO JOGO",color=Color(0xFFFFC9CC),fontSize=11.sp,fontWeight=FontWeight.ExtraBold)
+                Spacer(Modifier.height(12.dp))
+                Text(if(next!=null) next.optString("date",next.optString("scheduled_at","Próximo confronto")) else "Acompanhe os próximos desafios",color=White,fontSize=12.sp)
                 Spacer(Modifier.height(13.dp))
                 Row(verticalAlignment=Alignment.CenterVertically) {
                     Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally) {
-                        Text("♛",color=White,fontSize=29.sp,fontWeight=FontWeight.Black)
+                        Text("♛",color=White,fontSize=30.sp)
                         Text("ARQUEIROS",color=White,fontSize=10.sp,fontWeight=FontWeight.Black)
                     }
-                    Column(horizontalAlignment=Alignment.CenterHorizontally) {
-                        Text("VS",color=Color(0xFFFFC6CB),fontSize=19.sp,fontWeight=FontWeight.Black)
-                        Text("E-SPORTS",color=Color(0xFFFFA6AE),fontSize=8.sp)
-                    }
+                    Text("VS",color=Color(0xFFFFB9BE),fontSize=20.sp,fontWeight=FontWeight.Black)
                     Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally) {
-                        Text("⚔",color=White,fontSize=29.sp)
-                        Text(matches.firstOrNull()?.optString("away","ADVERSÁRIO")?.uppercase() ?: "ADVERSÁRIO",color=White,fontSize=10.sp,fontWeight=FontWeight.Black)
+                        Text("⚔",color=White,fontSize=30.sp)
+                        Text(next?.optString("away","ADVERSÁRIO")?.uppercase() ?: "ADVERSÁRIO",color=White,fontSize=10.sp,fontWeight=FontWeight.Black)
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                Text(if(matches.isNotEmpty()) matches.first().optString("competition","Confronto da equipe") else "Acompanhe os próximos desafios da equipe",color=Color(0xFFFFC6CB),fontSize=10.sp)
+                Spacer(Modifier.height(10.dp))
+                Text(next?.optString("competition","Confronto da equipe") ?: "Nenhum jogo agendado",color=Color(0xFFFFD9DB),fontSize=10.sp)
             }
         }
-        item { SectionTitle("RESUMO DA TEMPORADA") }
+        item { Text("RESUMO DA TEMPORADA",color=White,fontSize=13.sp,fontWeight=FontWeight.ExtraBold) }
         item {
-            val cards=listOf("JOGADORES" to dash.optInt("players"),"COMPETIÇÕES" to dash.optInt("competitions"),"PARTIDAS" to dash.optInt("approved"),"PENDENTES" to dash.optInt("pending"))
+            val cards=listOf("JOGADORES" to dash.optInt("players"),"PARTIDAS" to dash.optInt("approved"),"PENDENTES" to dash.optInt("pending"),"COMPETIÇÕES" to dash.optInt("competitions"))
             Column(verticalArrangement=Arrangement.spacedBy(9.dp)) {
-                cards.chunked(2).forEach { row -> Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) { row.forEach { (label,value)-> StatCard(label,value.toString(),Modifier.weight(1f)) } } }
+                cards.chunked(2).forEach { row -> Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
+                    row.forEach { (label,value) -> Column(Modifier.weight(1f).background(Color(0xFF17181C),RoundedCornerShape(15.dp)).padding(15.dp)) {
+                        Text(label,color=Muted,fontSize=9.sp,fontWeight=FontWeight.Bold)
+                        Text(value.toString(),color=White,fontSize=25.sp,fontWeight=FontWeight.Black)
+                    } }
+                } }
             }
         }
-        item { SectionTitle("ÚLTIMOS RESULTADOS") }
-        items(matches.take(6)) { m -> MatchCard(m) }
-        item { Button(onClick=refresh,enabled=!busy,modifier=Modifier.fillMaxWidth().height(48.dp),shape=RoundedCornerShape(13.dp),colors=ButtonDefaults.buttonColors(containerColor=Red)){Text(if(busy)"ATUALIZANDO..." else "ATUALIZAR DADOS",fontWeight=FontWeight.Bold)} }
+        item { Text("ÚLTIMOS RESULTADOS",color=White,fontSize=13.sp,fontWeight=FontWeight.ExtraBold) }
+        items(matches.take(5)) { m -> MatchCard(m) }
+        item { Button(onClick=refresh,enabled=!busy,modifier=Modifier.fillMaxWidth().height(46.dp),shape=RoundedCornerShape(12.dp),colors=ButtonDefaults.buttonColors(containerColor=Color(0xFFE50914))) { Text(if(busy) "ATUALIZANDO..." else "ATUALIZAR DADOS",fontWeight=FontWeight.Bold) } }
     }
 }
-
 @Composable
 private fun PlayersPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.CoroutineScope,refresh:()->Unit,errorSetter:(String)->Unit) {
     var search by remember { mutableStateOf("") }
     var showAdd by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }; var nick by remember { mutableStateOf("") }; var position by remember { mutableStateOf("") }
     val players=jsonArray(data,"players").filter { it.optString("name").contains(search,true) || it.optString("nickname").contains(search,true) }
-    Column(Modifier.fillMaxSize().padding(horizontal=16.dp)) {
-        Row(verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)){Text("ELENCO",color=White,fontSize=22.sp,fontWeight=FontWeight.Black);Text("${players.size} jogadores",color=Muted,fontSize=12.sp)}; Button(onClick={showAdd=!showAdd},colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("＋ NOVO")} }
-        Spacer(Modifier.height(8.dp)); Field("Buscar jogador",search,{search=it})
+    Column(Modifier.fillMaxSize().background(Black).padding(horizontal=14.dp)) {
+        Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.padding(top=14.dp,bottom=10.dp)) {
+            Column(Modifier.weight(1f)) { Text("Elenco",color=White,fontSize=22.sp,fontWeight=FontWeight.Black); Text("Total: ${players.size} jogadores",color=Muted,fontSize=11.sp) }
+            Text("⌕",color=White,fontSize=24.sp,modifier=Modifier.clickable{search=""}.padding(8.dp))
+        }
+        Row(Modifier.fillMaxWidth().background(Color(0xFF17181C),RoundedCornerShape(12.dp)).padding(4.dp)) {
+            Text("Jogadores",color=White,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f).background(Red,RoundedCornerShape(9.dp)).padding(10.dp),textAlign=androidx.compose.ui.text.style.TextAlign.Center)
+            Text("Estatísticas",color=Muted,fontSize=12.sp,modifier=Modifier.weight(1f).padding(10.dp),textAlign=androidx.compose.ui.text.style.TextAlign.Center)
+        }
+        Spacer(Modifier.height(10.dp))
+        Field("Buscar jogador",search,{search=it})
+        Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.padding(vertical=10.dp)) {
+            Text("JOGADORES DA EQUIPE",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
+            Text("＋ ADICIONAR",color=White,fontSize=10.sp,fontWeight=FontWeight.Bold,modifier=Modifier.background(Red,RoundedCornerShape(8.dp)).clickable{showAdd=!showAdd}.padding(horizontal=12.dp,vertical=9.dp))
+        }
         if(showAdd) {
-            Spacer(Modifier.height(8.dp)); Field("Nome completo",name,{name=it}); Field("Nick",nick,{nick=it}); Field("Posição",position,{position=it})
+            Field("Nome completo",name,{name=it}); Field("Nick",nick,{nick=it}); Field("Posição",position,{position=it})
             Button(onClick={scope.launch { try { api.request("/api/mobile/players","POST",JSONObject().put("name",name).put("nickname",nick).put("position",position)); name="";nick="";position="";showAdd=false;refresh() } catch(e:Exception){errorSetter(e.message?:"Erro")} } },enabled=name.isNotBlank(),colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("SALVAR JOGADOR")}
         }
-        LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(vertical=12.dp)) {
-            items(players) { p -> PanelCard {
+        LazyColumn(verticalArrangement=Arrangement.spacedBy(7.dp),contentPadding=PaddingValues(bottom=20.dp)) {
+            items(players) { p -> PanelCard(modifier=Modifier.background(Color(0xFF17181C),RoundedCornerShape(13.dp))) {
                 Row(verticalAlignment=Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) { Text(p.optString("name"),color=White,fontWeight=FontWeight.Bold); Text(listOf(p.optString("nickname"),p.optString("position"),p.optString("status")).filter{it.isNotBlank()}.joinToString(" • "),color=Muted,fontSize=11.sp) }
-                    Text("PERFIL",color=Red,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                    Box(Modifier.size(43.dp).background(Color(0xFF3A1016),RoundedCornerShape(50)),contentAlignment=Alignment.Center) { Text(p.optString("nickname",p.optString("name")).take(1).uppercase(),color=White,fontWeight=FontWeight.Black,fontSize=18.sp) }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) { Text(p.optString("nickname",p.optString("name")),color=White,fontWeight=FontWeight.Bold,fontSize=13.sp); Text(p.optString("position","Jogador"),color=Muted,fontSize=10.sp) }
+                    Text("›",color=White,fontSize=24.sp)
                 }
             } }
         }
     }
 }
-
 @Composable
 private fun MatchesPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.CoroutineScope,refresh:()->Unit,errorSetter:(String)->Unit) {
     var showAdd by remember { mutableStateOf(false) }
