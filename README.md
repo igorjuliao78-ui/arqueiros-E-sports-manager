@@ -109,6 +109,24 @@ Acesse `https://SUA_URL.onrender.com/?token=SEU_ADMIN_PANEL_TOKEN`. O painel per
 
 Guarde o token do painel em local seguro. Não envie a URL completa com o token em grupos ou conversas públicas.
 
+## eFootball Lab
+
+O painel administrativo inclui:
+- Várias builds vinculadas a cada jogador.
+- Posição, booster, overall opcional, pontos de progressão, atributos finais e observações.
+- Importação de captura PNG/JPG/WEBP (máximo 8 MB) por OCR em português. O OCR devolve um rascunho; confira os valores e salve manualmente.
+- Recomendações heurísticas por posição, com pesos transparentes. A pontuação é comparativa e interna, não uma fórmula oficial da Konami.
+- Planos táticos com formação, estilo de jogo, escalação e observações.
+
+Para a análise posicional, use chaves padronizadas em inglês, como `speed`, `acceleration`, `finishing`, `offensive_awareness`, `ball_control`, `dribbling`, `passing`, `stamina`, `defensive_awareness`, `ball_winning`, `physical_contact`, `jump`, `goalkeeping`, `reflexes`, `reach` e `catching`.
+
+Exemplo de progressão em JSON:
+```json
+{"SHO":4,"PAS":8,"DRI":8,"DEX":8,"LBS":10,"STA":4}
+```
+
+As rotas usam a autenticação administrativa existente e criam suas tabelas no banco atual, sem exigir um banco separado.
+
 ## Desenvolvimento local
 ```bash
 pip install -r requirements.txt
