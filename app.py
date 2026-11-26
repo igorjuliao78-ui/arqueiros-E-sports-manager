@@ -134,6 +134,9 @@ def auth(request:Request):
  return True
 def log(s,action,detail=""):
  s.add(Audit(actor="admin",action=action,detail=str(detail)[:2000]))
+from efootball import register_efootball
+register_efootball(app, Base, engine, SessionLocal, Player, auth, get_db, log)
+
 def ranking(s):
  table={}
  for m in s.query(Match).filter(Match.status=="Aprovado").all():
