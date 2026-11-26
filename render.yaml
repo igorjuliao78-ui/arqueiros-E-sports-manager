@@ -9,3 +9,8 @@ services:
     branch: main
     healthCheckPath: /health
     autoDeployTrigger: commit
+  envVars:
+    - key: DATABASE_URL
+      sync: false
+    - key: ADMIN_PANEL_TOKEN
+      sync: false
