@@ -225,7 +225,7 @@ internal fun EFootballPage(
                         Text("PP: ${b.optJSONObject("calculation")?.optInt("spent_pp") ?: 0}/${b.optJSONObject("calculation")?.optInt("available_pp") ?: 0}", color = EFRed, fontSize = 11.sp)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = compareIds.contains(b.optInt("id")), onCheckedChange = { checked ->
-                                compareIds = if (checked) (compareIds + b.optInt("id")).takeLast(2).toSet() else compareIds - b.optInt("id")
+                                compareIds = if (checked) (compareIds + b.optInt("id")).toList().takeLast(2).toSet() else compareIds - b.optInt("id")
                             })
                             Text("Selecionar para comparação", color = EFMuted, fontSize = 11.sp)
                             Spacer(Modifier.weight(1f))
