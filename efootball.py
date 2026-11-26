@@ -40,6 +40,10 @@ POSITION_WEIGHTS = {
     "SS": {"ball_control": 2, "dribbling": 2, "low_pass": 2, "finishing": 2, "offensive_awareness": 2, "acceleration": 1},
     "LWF": {"speed": 3, "acceleration": 3, "dribbling": 3, "ball_control": 2, "tight_possession": 2, "finishing": 1},
     "RWF": {"speed": 3, "acceleration": 3, "dribbling": 3, "ball_control": 2, "tight_possession": 2, "finishing": 1},
+    "LMF": {"speed": 2, "acceleration": 2, "dribbling": 2, "low_pass": 2, "lofted_pass": 2, "stamina": 2},
+    "RMF": {"speed": 2, "acceleration": 2, "dribbling": 2, "low_pass": 2, "lofted_pass": 2, "stamina": 2},
+    "MLE": {"speed": 2, "acceleration": 2, "dribbling": 2, "low_pass": 2, "lofted_pass": 2, "stamina": 2},
+    "MLD": {"speed": 2, "acceleration": 2, "dribbling": 2, "low_pass": 2, "lofted_pass": 2, "stamina": 2},
     "AMF": {"low_pass": 3, "lofted_pass": 2, "ball_control": 3, "dribbling": 2, "offensive_awareness": 2, "tight_possession": 2},
     "CMF": {"low_pass": 3, "lofted_pass": 2, "stamina": 2, "ball_control": 2, "defensive_awareness": 1, "speed": 1},
     "DMF": {"defensive_awareness": 3, "tackling": 3, "aggression": 2, "defensive_engagement": 2, "low_pass": 1, "stamina": 2},
@@ -66,7 +70,10 @@ ALL_STATS = sorted({stat for stats in CATEGORY_STATS.values() for stat in stats}
 
 def progression_points_for_level(level: int) -> int:
     """Two progression points per gained level, with level 1 as the starting level."""
-    return max(0, (int(level) - 1) * 2)
+    level = int(level)
+    if not 1 <= level <= 60:
+        raise ValueError("Nível deve ficar entre 1 e 60.")
+    return (level - 1) * 2
 
 
 def progression_cost(category_points: int) -> int:
