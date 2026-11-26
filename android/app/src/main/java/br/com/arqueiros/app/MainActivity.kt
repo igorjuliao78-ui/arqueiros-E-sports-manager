@@ -13,6 +13,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,7 +53,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private class Api(private val context: Context) {
+internal class Api(private val context: Context) {
     private val base = "https://arqueiros-e-sports-manager.onrender.com"
     private val prefs = context.getSharedPreferences("arqueiros", Context.MODE_PRIVATE)
     var token: String?
@@ -102,7 +104,7 @@ private fun ArqueirosApp() {
         scope.launch {
             busy = true
             try { data = api.request("/api/mobile/bootstrap"); user = data.optJSONObject("user") ?: user; error = "" }
-            catch (e: Exception) { error = e.message ?: "Erro"; if (error.contains("401")) { api.token=null; logged=false } }
+            catch (e: Exception) { error = e.message ?: "Erro"; if (error.contains("401") || error.contains("403")) { api.token=null; logged=false } }
             busy = false
         }
     }
@@ -123,11 +125,11 @@ private fun ArqueirosApp() {
                 Spacer(Modifier.width(12.dp))
                 Text("SAIR", color=Muted, modifier=Modifier.clickable { api.token=null; logged=false }.padding(6.dp), fontSize=11.sp)
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=8.dp), horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                listOf("Início","Elenco","Partidas","Ranking","Admin").forEach { item ->
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp, vertical=8.dp), horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                listOf("Início","Elenco","Partidas","Ranking","eFootball","Admin").forEach { item ->
                     val selected = page==item
                     Text(item, color=if(selected) White else Muted, fontSize=11.sp, fontWeight=FontWeight.Bold,
-                        modifier=Modifier.weight(1f).background(if(selected) Red else Panel, RoundedCornerShape(9.dp)).clickable { page=item }.padding(vertical=12.dp), textAlign=androidx.compose.ui.text.style.TextAlign.Center)
+                        modifier=Modifier.background(if(selected) Red else Panel, RoundedCornerShape(9.dp)).clickable { page=item }.padding(horizontal=13.dp, vertical=12.dp), textAlign=androidx.compose.ui.text.style.TextAlign.Center)
                 }
             }
             if (error.isNotBlank()) Text(error, color=Color(0xFFFF7777), modifier=Modifier.padding(horizontal=16.dp, vertical=6.dp), fontSize=12.sp)
@@ -136,6 +138,7 @@ private fun ArqueirosApp() {
                 "Elenco" -> PlayersPage(data, api, scope, ::refresh, errorSetter={error=it})
                 "Partidas" -> MatchesPage(data, api, scope, ::refresh, errorSetter={error=it})
                 "Ranking" -> RankingPage(data)
+                "eFootball" -> EFootballPage(data, api, scope, errorSetter={error=it})
                 else -> AdminPage(data, api, scope, ::refresh, errorSetter={error=it})
             }
         }
@@ -154,7 +157,7 @@ private fun LoginScreen(busy:Boolean, error:String, onLogin:(String,String)->Uni
         Text("ARQUEIROS", color=White, fontSize=32.sp, fontWeight=FontWeight.Black, letterSpacing=3.sp)
         Text("E-SPORTS MANAGER", color=Red, fontSize=13.sp, fontWeight=FontWeight.Bold, letterSpacing=3.sp)
         Spacer(Modifier.height(42.dp))
-        Text("ACESSO À EQUIPE", color=White, fontSize=19.sp, fontWeight=FontWeight.Bold)
+        Text("ACESSO DO ADMINISTRADOR", color=White, fontSize=19.sp, fontWeight=FontWeight.Bold)
         Spacer(Modifier.height(18.dp))
         Field("Usuário",username,{username=it})
         Spacer(Modifier.height(12.dp))
@@ -247,7 +250,7 @@ private fun AdminPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Coroutine
     }
     Column(Modifier.fillMaxSize().padding(horizontal=16.dp)) {
         Text("ADMINISTRAÇÃO",color=White,fontSize=22.sp,fontWeight=FontWeight.Black)
-        Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.padding(vertical=10.dp)){listOf("OCR","Pendências","Competições").forEach{t->Text(t,color=if(tab==t)White else Muted,modifier=Modifier.background(if(tab==t)Red else Panel,RoundedCornerShape(8.dp)).clickable{tab=t}.padding(10.dp),fontSize=11.sp,fontWeight=FontWeight.Bold)}}
+        Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.padding(vertical=10.dp)){listOf("OCR","Pendências","Competições","Federações").forEach{t->Text(t,color=if(tab==t)White else Muted,modifier=Modifier.background(if(tab==t)Red else Panel,RoundedCornerShape(8.dp)).clickable{tab=t}.padding(10.dp),fontSize=11.sp,fontWeight=FontWeight.Bold)}}
         when(tab) {
             "OCR" -> {
                 PanelCard {
@@ -284,6 +287,7 @@ private fun AdminPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Coroutine
                     PanelCard { MatchCard(m); Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button(onClick={scope.launch{try{api.request("/api/mobile/matches/${m.optInt("id")}/approve","POST");refresh()}catch(e:Exception){errorSetter(e.message?:"Erro")}}},colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("APROVAR")};OutlinedButton(onClick={scope.launch{try{api.request("/api/mobile/matches/${m.optInt("id")}/reject","POST");refresh()}catch(e:Exception){errorSetter(e.message?:"Erro")}}}){Text("REJEITAR")} } }
                 }
             }
+            "Federações" -> FederationPage(data, api, scope, refresh, errorSetter)
             else -> {
                 Text("COMPETIÇÕES",color=White,fontWeight=FontWeight.Bold)
                 jsonArray(data,"competitions").forEach { c -> PanelCard { Text(c.optString("name"),color=White,fontWeight=FontWeight.Bold);Text("${c.optString("kind")} • ${c.optString("season")}",color=Muted,fontSize=11.sp) } }

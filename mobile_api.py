@@ -266,10 +266,20 @@ def _decode_token(token: str):
         raise HTTPException(401, "Sessão inválida ou expirada. Entre novamente.")
 
 
-def current_user(authorization: Optional[str] = Header(default=None)):
+def current_user(authorization: Optional[str] = Header(default=None), s: Session = Depends(get_db)):
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(401, "Autenticação necessária.")
-    return _decode_token(authorization.split(" ", 1)[1].strip())
+    payload = _decode_token(authorization.split(" ", 1)[1].strip())
+    # The entire product is admin-only. Reject old member tokens and re-check
+    # persisted admin accounts so deactivation takes effect immediately.
+    if payload.get("role") != "admin":
+        raise HTTPException(403, "Acesso exclusivo para administradores.")
+    subject = int(payload.get("sub") or 0)
+    if subject:
+        account = s.get(MobileUser, subject)
+        if not account or not account.active or account.role != "admin":
+            raise HTTPException(401, "Conta administrativa inativa. Entre novamente.")
+    return payload
 
 
 def admin_only(user=Depends(current_user)):
@@ -319,6 +329,8 @@ async def mobile_login(request: Request, s: Session = Depends(get_db)):
     user = s.query(MobileUser).filter(MobileUser.username.ilike(username), MobileUser.active.is_(True)).first()
     if not user or not _password_ok(password, user.password_hash):
         raise HTTPException(401, "Usuário ou senha incorretos.")
+    if user.role != "admin":
+        raise HTTPException(403, "Este aplicativo é exclusivo para administradores.")
     player = s.get(Player, user.player_id) if user.player_id else None
     token = _issue_token(user.id, user.username, user.role, user.player_id)
     return {"access_token": token, "token_type": "bearer",
@@ -398,12 +410,12 @@ async def mobile_create_user(request: Request, user=Depends(admin_only), s: Sess
     d = await request.json()
     username = str(d.get("username", "")).strip()
     password = str(d.get("password", ""))
-    role = str(d.get("role", "member"))
+    role = str(d.get("role", "admin"))
     player_id = d.get("player_id") or None
     if len(username) < 3 or len(password) < 8:
         raise HTTPException(400, "Usuário deve ter 3 caracteres e senha no mínimo 8.")
-    if role not in ("admin", "member"):
-        raise HTTPException(400, "Perfil inválido.")
+    if role != "admin":
+        raise HTTPException(400, "Somente contas administrativas podem ser criadas.")
     if s.query(MobileUser).filter(MobileUser.username.ilike(username)).first():
         raise HTTPException(409, "Esse usuário já existe.")
     if player_id and not s.get(Player, int(player_id)):

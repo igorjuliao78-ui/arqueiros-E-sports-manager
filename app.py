@@ -134,6 +134,9 @@ def auth(request:Request):
  return True
 def log(s,action,detail=""):
  s.add(Audit(actor="admin",action=action,detail=str(detail)[:2000]))
+from efootball import register_efootball, register_efootball_mobile
+EFOOTBALL_PLAYER_BUILD, EFOOTBALL_SQUAD_PLAN = register_efootball(app, Base, engine, Player, auth, get_db, log)
+
 def ranking(s):
  table={}
  for m in s.query(Match).filter(Match.status=="Aprovado").all():
@@ -959,5 +962,6 @@ async def telegram(request:Request,x_telegram_bot_api_secret_token:Optional[str]
 
 
 # API autenticada usada pelo aplicativo Android nativo.
-from mobile_api import router as mobile_router
+from mobile_api import router as mobile_router, admin_only
+register_efootball_mobile(mobile_router, Player, EFOOTBALL_PLAYER_BUILD, EFOOTBALL_SQUAD_PLAN, get_db, admin_only, log)
 app.include_router(mobile_router)
