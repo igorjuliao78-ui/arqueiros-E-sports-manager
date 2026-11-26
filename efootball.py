@@ -342,8 +342,8 @@ def register_efootball(app, Base, engine, Player, auth, get_db, log):
 
     @app.get("/api/efootball/players")
     def efootball_players(s=Depends(get_db), _: bool = Depends(auth)):
-        return [{"id": p.id, "name": p.name, "nickname": p.nickname, "position": p.position}
-                for p in s.query(Player).filter(Player.active.is_(True)).order_by(Player.name).all()]
+        return {"players": [{"id": p.id, "name": p.name, "nickname": p.nickname, "position": p.position}
+                for p in s.query(Player).filter(Player.active.is_(True)).order_by(Player.name).all()]}
 
     @app.get("/api/efootball/builds")
     def list_builds(player_id: Optional[int] = None, s=Depends(get_db), _: bool = Depends(auth)):
@@ -454,7 +454,7 @@ def register_efootball_mobile(router, Player, PlayerBuild, SquadPlan, get_db, ad
             q = q.filter(PlayerBuild.player_id == player_id)
         rows = q.limit(300).all()
         names = {p.id: p.name for p in s.query(Player).all()}
-        return [serialize_build(row, names.get(row.player_id) if row.player_id else row.card_name) for row in rows]
+        return {"builds": [serialize_build(row, names.get(row.player_id) if row.player_id else row.card_name) for row in rows]}
 
     @router.post("/efootball/builds")
     async def mobile_save_build(request: Request, s=Depends(get_db), _: bool = Depends(admin_only)):
