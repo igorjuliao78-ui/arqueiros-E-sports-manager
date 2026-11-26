@@ -250,7 +250,7 @@ private fun AdminPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Coroutine
     }
     Column(Modifier.fillMaxSize().padding(horizontal=16.dp)) {
         Text("ADMINISTRAÇÃO",color=White,fontSize=22.sp,fontWeight=FontWeight.Black)
-        Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.padding(vertical=10.dp)){listOf("OCR","Pendências","Competições").forEach{t->Text(t,color=if(tab==t)White else Muted,modifier=Modifier.background(if(tab==t)Red else Panel,RoundedCornerShape(8.dp)).clickable{tab=t}.padding(10.dp),fontSize=11.sp,fontWeight=FontWeight.Bold)}}
+        Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.padding(vertical=10.dp)){listOf("OCR","Pendências","Competições","Federações").forEach{t->Text(t,color=if(tab==t)White else Muted,modifier=Modifier.background(if(tab==t)Red else Panel,RoundedCornerShape(8.dp)).clickable{tab=t}.padding(10.dp),fontSize=11.sp,fontWeight=FontWeight.Bold)}}
         when(tab) {
             "OCR" -> {
                 PanelCard {
@@ -287,6 +287,7 @@ private fun AdminPage(data:JSONObject,api:Api,scope:kotlinx.coroutines.Coroutine
                     PanelCard { MatchCard(m); Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button(onClick={scope.launch{try{api.request("/api/mobile/matches/${m.optInt("id")}/approve","POST");refresh()}catch(e:Exception){errorSetter(e.message?:"Erro")}}},colors=ButtonDefaults.buttonColors(containerColor=Red)){Text("APROVAR")};OutlinedButton(onClick={scope.launch{try{api.request("/api/mobile/matches/${m.optInt("id")}/reject","POST");refresh()}catch(e:Exception){errorSetter(e.message?:"Erro")}}}){Text("REJEITAR")} } }
                 }
             }
+            "Federações" -> FederationPage(data, api, scope, refresh, errorSetter)
             else -> {
                 Text("COMPETIÇÕES",color=White,fontWeight=FontWeight.Bold)
                 jsonArray(data,"competitions").forEach { c -> PanelCard { Text(c.optString("name"),color=White,fontWeight=FontWeight.Bold);Text("${c.optString("kind")} • ${c.optString("season")}",color=Muted,fontSize=11.sp) } }
