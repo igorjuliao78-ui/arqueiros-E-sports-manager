@@ -267,6 +267,11 @@ def register_efootball(app, Base, engine, SessionLocal, Player, auth, get_db, lo
             attrs = json.loads(row.attributes or "{}")
             if not attrs:
                 continue
+            # If OCR supplied separate short/lofted passing values, derive a neutral
+            # average for the broad passing weight used by this heuristic.
+            if "passing" not in attrs and ("low_pass" in attrs or "lofted_pass" in attrs):
+                pass_values = [attrs[key] for key in ("low_pass", "lofted_pass") if key in attrs]
+                attrs["passing"] = sum(pass_values) / len(pass_values)
             score = sum(float(attrs.get(key, 0)) * weight for key, weight in weights.items()) / sum(weights.values())
             ranked.append({
                 "build_id": row.id, "player_id": row.player_id,
