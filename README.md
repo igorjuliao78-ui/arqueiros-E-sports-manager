@@ -25,6 +25,10 @@ Sistema de gestão da Arqueiros E-Sports com painel administrativo e bot do Tele
 - Relatório geral completo em PDF, com resumo da equipe, estatísticas individuais, competições, confrontos, resultados por jogador, títulos, disciplina, recrutamento e auditoria administrativa.
 - Banco PostgreSQL único compartilhado entre todos os administradores: alterações feitas pelo painel ou Telegram são persistidas no mesmo banco e ficam disponíveis para os demais.
 - Mural de comunicados administrativos, com envio opcional ao grupo Telegram.
+- eFootball Lab: builds por jogador, progressão, boosters, overall e atributos.
+- Importação de prints de atributos por OCR em português, com revisão manual antes de salvar.
+- Comparação heurística de builds por posição, sem afirmar que reproduz fórmula oficial do jogo.
+- Planejamento tático com formação, estilo de jogo e escalações salvas.
 
 ## Publicação no Render
 
