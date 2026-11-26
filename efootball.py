@@ -4,6 +4,7 @@ Progression cost and category mapping are versioned as game-reference rules. Rol
 is an internal, transparent heuristic; it is not Konami's Overall Rating formula.
 """
 import json
+import base64
 from datetime import datetime
 from typing import Optional
 
@@ -525,6 +526,40 @@ def register_efootball_mobile(router, Player, PlayerBuild, SquadPlan, get_db, ad
                                        data.get("position") or "CMF", data.get("booster_effects") or {})
         except (ValueError, TypeError) as exc:
             raise HTTPException(400, str(exc))
+
+    @router.post("/efootball/import-image")
+    async def mobile_import_player_image(request: Request, _: bool = Depends(admin_only)):
+        data = await request.json()
+        encoded = str(data.get("image_base64") or "")
+        if not encoded:
+            raise HTTPException(400, "Selecione uma imagem.")
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+            if len(raw) > 8 * 1024 * 1024:
+                raise HTTPException(413, "A imagem deve ter no máximo 8 MB.")
+            picture = Image.open(io.BytesIO(raw)).convert("RGB")
+            text = pytesseract.image_to_string(picture, lang="por+eng")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(422, "Não foi possível ler o print: " + str(exc)[:120])
+        parsed = {}
+        for line in (x.strip() for x in text.splitlines() if x.strip()):
+            normalized = _ascii(line)
+            numbers = re.findall(r"(?<![a-z])\\d{1,3}(?![a-z])", normalized)
+            if not numbers:
+                continue
+            value = int(numbers[-1])
+            if value > 120:
+                continue
+            for label, key in STAT_ALIASES.items():
+                if label in normalized:
+                    parsed[key] = value
+                    break
+        return {"ok": True, "card_name": str(data.get("card_name") or ""),
+                "player_id": data.get("player_id"), "attributes": parsed,
+                "raw_text": text[:6000], "review_required": True,
+                "message": "Rascunho de OCR. Confira os valores antes de salvar."}
 
     @router.get("/efootball/squad-plans")
     def mobile_list_squad_plans(s=Depends(get_db), _: bool = Depends(admin_only)):
