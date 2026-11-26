@@ -129,7 +129,7 @@ internal fun EFootballPage(
                     Text("DADOS DA CARTA", color = EFWhite, fontWeight = FontWeight.Bold)
                     EFInput("Nome da carta / jogador", cardName, { cardName = it })
                     EFInput("Nome da build", buildName, { buildName = it })
-                    EFInput("Vincular ao elenco (ID do jogador; opcional)", playerId, { playerId = it })
+                    EFPlayerPicker("Vincular ao elenco (opcional)", players, playerId) { playerId = it }
                     EFInput("Tipo da carta", cardType, { cardType = it })
                     EFInput("Posição (CF, SS, LWF, RWF, AMF, CMF, DMF, LB, RB, CB, GK)", position, { position = it })
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
