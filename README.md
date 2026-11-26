@@ -115,7 +115,22 @@ Guarde o token do painel em local seguro. Não envie a URL completa com o token 
 
 ## eFootball Lab
 
-O painel administrativo inclui:
+O painel e o aplicativo Android incluem o Player Builder, OCR, comparação e planejamento tático.
+
+### Regras de progressão implementadas
+- Nível 1 começa com 0 PP; cada nível ganho concede 2 PP.
+- O custo de cada categoria aumenta a cada 4 CP: CP 1–4 custam 1 PP cada; 5–8 custam 2; 9–12 custam 3; 13–16 custam 4.
+- Cada CP aumenta os atributos vinculados à categoria em +1, limitado a 99 antes dos efeitos do booster.
+- Os efeitos do booster são informados separadamente e aplicados depois da progressão, com teto de 120.
+- O sistema não calcula o Overall Rating oficial da Konami. O otimizador usa uma heurística explícita de adequação à posição e não deve ser interpretado como OVR oficial.
+- O nível máximo da carta é configurável. O simulador valida o orçamento de PP antes de salvar.
+- Cartas podem ser vinculadas a um integrante da Arqueiros ou cadastradas sem vínculo.
+
+Referências utilizadas para as regras:
+- Konami — [desenvolvimento de jogadores e boosters](https://www.konami.com/efootball/en/page/overview).
+- eFootball LABO — [pontos, custo progressivo e categorias de atributos](https://ef-labo.com/efootball/player-progression/). Fonte comunitária independente, não afiliada à Konami.
+
+
 - Várias builds vinculadas a cada jogador.
 - Posição, booster, overall opcional, pontos de progressão, atributos finais e observações.
 - Importação de captura PNG/JPG/WEBP (máximo 8 MB) por OCR em português. O OCR devolve um rascunho; confira os valores e salve manualmente.
@@ -153,9 +168,11 @@ Para ativar:
 1. No GitHub, abra o repositório e entre em **Settings** > **Secrets and variables** > **Actions**.
 2. Clique em **New repository secret**.
 3. Nome: `DATABASE_URL`.
-4. Valor: use a **External Database URL** do PostgreSQL no Render (não a URL interna).
+4. Valor: use exatamente a mesma URL PostgreSQL definida em `DATABASE_URL` no serviço de produção (Neon ou outro provedor). Não crie um banco separado para o backup.
 5. Salve e crie outro secret chamado `BACKUP_ENCRYPTION_PASSPHRASE`, com uma senha longa e exclusiva. Guarde essa senha em local seguro: ela será necessária para descriptografar os backups.
 6. Salve. O workflow também pode ser iniciado manualmente na aba **Actions**.
+
+**Estado verificado em 26/11/2026:** a última execução falhou porque os dois secrets ainda não estavam configurados. Até que ambos sejam adicionados e uma execução termine com sucesso, não considere o backup automático ativo.
 
 O arquivo `.gpg` fica em **Actions** > execução do backup > **Artifacts**. Por segurança, o backup é armazenado criptografado. Para restaurar, baixe o artefato, descriptografe com a mesma senha e use `pg_restore`. Faça testes periódicos de restauração; um backup só é útil se puder ser restaurado.
 
@@ -165,7 +182,7 @@ Para publicar comunicados do painel também em um grupo, adicione o bot ao grupo
 
 ## Limites de segurança e próximos ajustes
 
-O painel atual usa um token administrativo compartilhado. Portanto, ainda não há contas individuais com permissões diferentes por administrador. Não compartilhe esse token; a implantação de perfis individuais exige uma tela de autenticação e gestão de contas antes de liberar permissões granulares.
+O painel web usa o segredo `ADMIN_PANEL_TOKEN`. O aplicativo Android aceita o login administrativo `admin` com esse token ou contas administrativas criadas pela rota protegida de gestão de usuários. O backend rejeita perfis `member` e revalida o estado das contas administrativas em cada requisição. Não compartilhe o token.
 
 ## Cards semanais e entrega aos jogadores
 
