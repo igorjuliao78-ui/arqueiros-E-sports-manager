@@ -190,7 +190,7 @@ def register_efootball(app, Base, engine, SessionLocal, Player, auth, get_db, lo
             raise HTTPException(413, "A imagem deve ter no máximo 8 MB.")
         try:
             picture = Image.open(io.BytesIO(raw)).convert("RGB")
-            text = pytesseract.image_to_string(picture, lang="por+eng")
+            text = pytesseract.image_to_string(picture, lang="por")
         except Exception as exc:
             raise HTTPException(422, "Não foi possível ler a imagem. Verifique o OCR do servidor: " + str(exc)[:160])
         def norm(value):
