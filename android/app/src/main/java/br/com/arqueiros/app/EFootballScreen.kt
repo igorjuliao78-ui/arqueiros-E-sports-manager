@@ -137,7 +137,7 @@ internal fun EFootballPage(
                         EFInput("Nível máximo", maxLevel, { maxLevel = it }, Modifier.weight(1f))
                         EFInput("Overall base", overall, { overall = it }, Modifier.weight(1f))
                     }
-                    EFInput("Booster", booster, { booster = it })
+                    EFInput("Boosters 1 e 2 (descrição)", booster, { booster = it })
                 }
                 EFCard {
                     Text("ATRIBUTOS BASE (JSON)", color = EFWhite, fontWeight = FontWeight.Bold)
@@ -145,7 +145,7 @@ internal fun EFootballPage(
                     EFInput("Atributos base", baseStats, { baseStats = it }, minLines = 5)
                     Text("PROGRESSÃO POR CATEGORIA (CP)", color = EFWhite, fontWeight = FontWeight.Bold)
                     EFInput("Distribuição", progression, { progression = it }, minLines = 4)
-                    Text("EFEITOS DO BOOSTER (JSON)", color = EFWhite, fontWeight = FontWeight.Bold)
+                    Text("BÔNUS COMBINADOS DE BOOSTERS / MANAGER (JSON)", color = EFWhite, fontWeight = FontWeight.Bold)
                     EFInput("Ex.: {\"speed\":2,\"acceleration\":2}", boosterEffects, { boosterEffects = it }, minLines = 2)
                     EFInput("Observações", notes, { notes = it }, minLines = 2)
                     Button(
