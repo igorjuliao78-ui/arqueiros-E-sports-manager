@@ -109,14 +109,33 @@ internal fun FederationPage(
         Text("HISTÓRICO DE CONFRONTOS", color = Color.White, fontWeight = FontWeight.Bold)
         if (fixtures.isEmpty()) Text("Nenhum confronto de federação cadastrado.", color = Color(0xFF9BA2B1), fontSize = 12.sp)
         fixtures.forEach { fixture ->
+            var editFor by remember(fixture.optInt("id")) { mutableStateOf(if (fixture.isNull("score_for")) "" else fixture.optInt("score_for").toString()) }
+            var editAgainst by remember(fixture.optInt("id")) { mutableStateOf(if (fixture.isNull("score_against")) "" else fixture.optInt("score_against").toString()) }
+            var editLineup by remember(fixture.optInt("id")) { mutableStateOf(fixture.optString("lineup")) }
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF151821))) {
                 Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("${fixture.optString("round")} • ${fixture.optString("opponent")}", color = Color.White, fontWeight = FontWeight.Bold)
                     Text("${fixture.optString("format")} • ${fixture.optString("competition", "Sem competição")}", color = Color(0xFF9BA2B1), fontSize = 11.sp)
                     Text("Arqueiros ${if (fixture.isNull("score_for")) "—" else fixture.optInt("score_for")} × ${if (fixture.isNull("score_against")) "—" else fixture.optInt("score_against")} adversário", color = Color(0xFFC62836), fontWeight = FontWeight.Bold)
                     Text("Status: ${fixture.optString("status")}", color = Color(0xFF9BA2B1), fontSize = 11.sp)
-                    if (fixture.optString("lineup").isNotBlank()) Text(fixture.optString("lineup"), color = Color(0xFF9BA2B1), fontSize = 11.sp)
                     if (fixture.optString("status") == "Pendente") {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(value = editFor, onValueChange = { editFor = it }, label = { Text("Vitórias Arqueiros") }, modifier = Modifier.weight(1f))
+                            OutlinedTextField(value = editAgainst, onValueChange = { editAgainst = it }, label = { Text("Vitórias rival") }, modifier = Modifier.weight(1f))
+                        }
+                        OutlinedTextField(value = editLineup, onValueChange = { editLineup = it }, label = { Text("Escalação / detalhes") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+                        Button(onClick = {
+                            scope.launch {
+                                try {
+                                    val payload = JSONObject().put("score_for", editFor.toInt()).put("score_against", editAgainst.toInt()).put("lineup", editLineup)
+                                    api.request("/api/mobile/federation/${fixture.optInt("id")}", "PUT", payload)
+                                    errorSetter("Placar e escalação atualizados.")
+                                    refresh()
+                                } catch (e: Exception) { errorSetter(e.message ?: "Informe os dois placares válidos.") }
+                            }
+                        }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF242A35))) {
+                            Text("ATUALIZAR PLACAR")
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = {
                                 scope.launch {
@@ -124,7 +143,7 @@ internal fun FederationPage(
                                         api.request("/api/mobile/federation/${fixture.optInt("id")}/approve", "POST")
                                         errorSetter("Confronto aprovado.")
                                         refresh()
-                                    } catch (e: Exception) { errorSetter(e.message ?: "Não foi possível aprovar.") }
+                                    } catch (e: Exception) { errorSetter(e.message ?: "Atualize o placar antes de aprovar.") }
                                 }
                             }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62836)), modifier = Modifier.weight(1f)) {
                                 Text("APROVAR")
@@ -139,6 +158,8 @@ internal fun FederationPage(
                                 }
                             }, modifier = Modifier.weight(1f)) { Text("REJEITAR") }
                         }
+                    } else if (fixture.optString("lineup").isNotBlank()) {
+                        Text(fixture.optString("lineup"), color = Color(0xFF9BA2B1), fontSize = 11.sp)
                     }
                 }
             }
