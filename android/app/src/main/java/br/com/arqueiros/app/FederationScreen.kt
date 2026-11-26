@@ -49,11 +49,14 @@ internal fun FederationPage(
                 Text("Formato", color = Color(0xFF9BA2B1), fontSize = 11.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     listOf("3x3", "5x5", "6x6").forEach { item ->
-                        Text(
-                            item,
-                            color = Color.White,
-                            modifier = Modifier.background(if (format == item) Color(0xFFC62836) else Color(0xFF242A35), RoundedCornerShape(7.dp))
-                                .padding(horizontal = 13.dp, vertical = 9.dp)
+                        FilterChip(
+                            selected = format == item,
+                            onClick = { format = item },
+                            label = { Text(item) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFFC62836),
+                                selectedLabelColor = Color.White
+                            )
                         )
                     }
                 }
@@ -126,16 +129,6 @@ internal fun FederationPage(
             }
         }
     }
-}
-
-@Composable
-private fun RowScope.Text(
-    text: String,
-    color: Color,
-    fontSize: androidx.compose.ui.unit.TextUnit = 14.sp,
-    fontWeight: FontWeight? = null,
-) {
-    androidx.compose.material3.Text(text, color = color, fontSize = fontSize, fontWeight = fontWeight)
 }
 
 private fun federationArray(obj: JSONObject, key: String): List<JSONObject> {
