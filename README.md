@@ -25,6 +25,10 @@ Sistema de gestão da Arqueiros E-Sports com painel administrativo e bot do Tele
 - Relatório geral completo em PDF, com resumo da equipe, estatísticas individuais, competições, confrontos, resultados por jogador, títulos, disciplina, recrutamento e auditoria administrativa.
 - Banco PostgreSQL único compartilhado entre todos os administradores: alterações feitas pelo painel ou Telegram são persistidas no mesmo banco e ficam disponíveis para os demais.
 - Mural de comunicados administrativos, com envio opcional ao grupo Telegram.
+- eFootball Lab no painel web e no app Android: Player Builder, OCR, comparação de builds e montador tático.
+- Simulador de progressão com custo de PP por categoria, boosters e recomendações heurísticas por posição.
+- Acesso administrativo exclusivo: perfis de membro e tokens antigos de membro não autenticam no app.
+
 - eFootball Lab: builds por jogador, progressão, boosters, overall e atributos.
 - Importação de prints de atributos por OCR em português, com revisão manual antes de salvar.
 - Comparação heurística de builds por posição, sem afirmar que reproduz fórmula oficial do jogo.
@@ -115,7 +119,7 @@ Guarde o token do painel em local seguro. Não envie a URL completa com o token 
 
 ## eFootball Lab
 
-O painel e o aplicativo Android incluem o Player Builder, OCR, comparação e planejamento tático.
+O painel web e o aplicativo Android incluem Player Builder, OCR, comparação e planejamento tático.
 
 ### Regras de progressão implementadas
 - Nível 1 começa com 0 PP; cada nível ganho concede 2 PP.
@@ -125,26 +129,11 @@ O painel e o aplicativo Android incluem o Player Builder, OCR, comparação e pl
 - O sistema não calcula o Overall Rating oficial da Konami. O otimizador usa uma heurística explícita de adequação à posição e não deve ser interpretado como OVR oficial.
 - O nível máximo da carta é configurável. O simulador valida o orçamento de PP antes de salvar.
 - Cartas podem ser vinculadas a um integrante da Arqueiros ou cadastradas sem vínculo.
+- OCR aceita imagens PNG/JPG/WEBP de até 8 MB e sempre exige revisão manual dos valores.
 
-Referências utilizadas para as regras:
+### Referências das regras
 - Konami — [desenvolvimento de jogadores e boosters](https://www.konami.com/efootball/en/page/overview).
 - eFootball LABO — [pontos, custo progressivo e categorias de atributos](https://ef-labo.com/efootball/player-progression/). Fonte comunitária independente, não afiliada à Konami.
-
-
-- Várias builds vinculadas a cada jogador.
-- Posição, booster, overall opcional, pontos de progressão, atributos finais e observações.
-- Importação de captura PNG/JPG/WEBP (máximo 8 MB) por OCR em português. O OCR devolve um rascunho; confira os valores e salve manualmente.
-- Recomendações heurísticas por posição, com pesos transparentes. A pontuação é comparativa e interna, não uma fórmula oficial da Konami.
-- Planos táticos com formação, estilo de jogo, escalação e observações.
-
-Para a análise posicional, use chaves padronizadas em inglês, como `speed`, `acceleration`, `finishing`, `offensive_awareness`, `ball_control`, `dribbling`, `passing`, `stamina`, `defensive_awareness`, `ball_winning`, `physical_contact`, `jump`, `goalkeeping`, `reflexes`, `reach` e `catching`.
-
-Exemplo de progressão em JSON:
-```json
-{"SHO":4,"PAS":8,"DRI":8,"DEX":8,"LBS":10,"STA":4}
-```
-
-As rotas usam a autenticação administrativa existente e criam suas tabelas no banco atual, sem exigir um banco separado.
 
 ## Desenvolvimento local
 ```bash
