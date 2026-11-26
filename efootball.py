@@ -162,7 +162,7 @@ def optimize_allocation(base_stats, level, position, booster_effects=None):
             for stat in stats:
                 if stat not in base:
                     continue
-                current = min(99, base[stat] + allocation[category] + boosts.get(stat, 0))
+                current = min(99, base[stat] + allocation[category])
                 if current < 99:
                     weight = float(weights.get(stat, 0))
                     # Diminishing returns are deliberately simple and visible.
@@ -176,8 +176,9 @@ def optimize_allocation(base_stats, level, position, booster_effects=None):
         spent += cost
     result = calculate_build(base, allocation, level, boosts)
     stats = result["final_stats"]
-    denominator = sum(weights.values()) or 1
-    result["role_fit_score"] = round(sum(stats.get(k, 0) * v for k, v in weights.items()) / denominator, 2)
+    present_weights = {k: v for k, v in weights.items() if k in stats}
+    denominator = sum(present_weights.values()) or 1
+    result["role_fit_score"] = round(sum(stats.get(k, 0) * v for k, v in present_weights.items()) / denominator, 2)
     result["optimization"] = "Heurística de adequação à posição; não otimiza nem prevê o Overall Rating oficial."
     result["position"] = str(position or "").upper()
     return result
@@ -411,7 +412,7 @@ def register_efootball(app, Base, engine, Player, auth, get_db, log):
                 continue
             for label, key in STAT_ALIASES.items():
                 if label in normalized:
-                    parsed[key] = min(99, value)
+                    parsed[key] = value
                     break
         return {"ok": True, "card_name": card_name, "player_id": player_id,
                 "attributes": parsed, "raw_text": text[:6000], "review_required": True,
