@@ -420,36 +420,92 @@ def register_efootball(app, Base, engine, Player, auth, get_db, log):
     return PlayerBuild, SquadPlan
 
 
-def register_efootball_mobile(router, PlayerBuild, SquadPlan, get_db, admin_only, log):
-    """Register equivalent endpoints protected by the Android app's Bearer admin session."""
-    def _build_dict(row, player_name=None):
+def register_efootball_mobile(router, Player, PlayerBuild, SquadPlan, get_db, admin_only, log):
+    """Register eFootball routes for the native Android app using Bearer admin auth."""
+    def serialize_build(row, player_name=None):
         base = json.loads(row.attributes or "{}")
         progression = json.loads(row.progression or "{}")
         boosts = json.loads(row.booster_effects or "{}")
         try:
-            calc = calculate_build(base, progression, row.level, boosts)
+            calculation = calculate_build(base, progression, row.level, boosts)
         except ValueError as exc:
-            calc = {"error": str(exc)}
-        return {"id": row.id, "player_id": row.player_id, "player_name": player_name or row.card_name,
-                "card_name": row.card_name, "card_type": row.card_type, "name": row.name,
-                "position": row.position, "booster": row.booster, "level": row.level,
-                "max_level": row.max_level, "overall": row.overall, "progression": progression,
-                "attributes": base, "booster_effects": boosts, "calculation": calc,
-                "notes": row.notes, "created_at": row.created_at.isoformat() if row.created_at else None}
+            calculation = {"error": str(exc)}
+        return {
+            "id": row.id, "player_id": row.player_id,
+            "player_name": player_name or row.card_name, "card_name": row.card_name,
+            "card_type": row.card_type, "name": row.name, "position": row.position,
+            "booster": row.booster, "level": row.level, "max_level": row.max_level,
+            "overall": row.overall, "progression": progression, "attributes": base,
+            "booster_effects": boosts, "calculation": calculation, "notes": row.notes,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+
+    @router.get("/efootball/players")
+    def mobile_efootball_players(s=Depends(get_db), _: bool = Depends(admin_only)):
+        return [{"id": p.id, "name": p.name, "nickname": p.nickname, "position": p.position}
+                for p in s.query(Player).filter(Player.active.is_(True)).order_by(Player.name).all()]
 
     @router.get("/efootball/builds")
     def mobile_list_builds(player_id: Optional[int] = None, s=Depends(get_db), _: bool = Depends(admin_only)):
-        rows = s.query(PlayerBuild).order_by(PlayerBuild.created_at.desc(), PlayerBuild.id.desc()).limit(300).all()
-        names = {p.id: p.name for p in s.query(__import__("app").Player).all()}
-        return [_build_dict(row, names.get(row.player_id) if row.player_id else row.card_name)
-                for row in rows if not player_id or row.player_id == player_id]
+        q = s.query(PlayerBuild).order_by(PlayerBuild.created_at.desc(), PlayerBuild.id.desc())
+        if player_id:
+            q = q.filter(PlayerBuild.player_id == player_id)
+        rows = q.limit(300).all()
+        names = {p.id: p.name for p in s.query(Player).all()}
+        return [serialize_build(row, names.get(row.player_id) if row.player_id else row.card_name) for row in rows]
 
     @router.post("/efootball/builds")
     async def mobile_save_build(request: Request, s=Depends(get_db), _: bool = Depends(admin_only)):
         data = await request.json()
-        # Reuse the browser endpoint's validated service logic through its stored handler.
-        handler = next(route.endpoint for route in app_routes if route.path == "/api/efootball/builds" and route.methods == {"POST"})
-        return handler
+        player_id = data.get("player_id")
+        player = s.get(Player, int(player_id)) if player_id not in (None, "", 0, "0") else None
+        if player_id not in (None, "", 0, "0") and (not player or not player.active):
+            raise HTTPException(400, "Selecione um jogador ativo do elenco.")
+        card_name = str(data.get("card_name") or (player.name if player else "")).strip()[:120]
+        if not card_name:
+            raise HTTPException(400, "Informe o nome do jogador do eFootball.")
+        level, max_level = int(data.get("level") or 1), int(data.get("max_level") or 30)
+        if not 1 <= max_level <= 60 or not 1 <= level <= max_level:
+            raise HTTPException(400, "Nível inválido.")
+        try:
+            progression = normalize_category_points(data.get("progression") or {})
+            attributes = normalize_stats(data.get("attributes") or {}, minimum=1, maximum=99)
+            boosts = normalize_stats(data.get("booster_effects") or {}, minimum=0, maximum=20) if data.get("booster_effects") else {}
+            calc = calculate_build(attributes, progression, level, boosts)
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc))
+        overall = data.get("overall")
+        if overall not in ("", None):
+            overall = int(overall)
+            if not 40 <= overall <= 110:
+                raise HTTPException(400, "Overall deve ficar entre 40 e 110.")
+        else:
+            overall = None
+        row = PlayerBuild(
+            player_id=player.id if player else None, card_name=card_name,
+            card_type=str(data.get("card_type") or "")[:60],
+            name=str(data.get("name") or "Build principal")[:100],
+            position=str(data.get("position") or "").upper()[:30],
+            booster=str(data.get("booster") or "")[:100], level=level, max_level=max_level,
+            overall=overall, progression=json.dumps(progression, ensure_ascii=False),
+            attributes=json.dumps(attributes, ensure_ascii=False),
+            booster_effects=json.dumps(boosts, ensure_ascii=False),
+            notes=str(data.get("notes") or "")[:2000],
+        )
+        s.add(row)
+        log(s, "efootball.build.created.mobile", f"{card_name}: {row.name}; {calc['spent_pp']}/{calc['available_pp']} PP")
+        s.commit()
+        return serialize_build(row, player.name if player else card_name)
+
+    @router.delete("/efootball/builds/{build_id}")
+    def mobile_delete_build(build_id: int, s=Depends(get_db), _: bool = Depends(admin_only)):
+        row = s.get(PlayerBuild, build_id)
+        if not row:
+            raise HTTPException(404, "Build não encontrada.")
+        log(s, "efootball.build.deleted.mobile", f"build={build_id}; card={row.card_name}")
+        s.delete(row)
+        s.commit()
+        return {"ok": True}
 
     @router.post("/efootball/simulate")
     async def mobile_simulate(request: Request, _: bool = Depends(admin_only)):
@@ -459,3 +515,62 @@ def register_efootball_mobile(router, PlayerBuild, SquadPlan, get_db, admin_only
                                    int(data.get("level") or 1), data.get("booster_effects") or {})
         except (ValueError, TypeError) as exc:
             raise HTTPException(400, str(exc))
+
+    @router.post("/efootball/optimize")
+    async def mobile_optimize(request: Request, _: bool = Depends(admin_only)):
+        data = await request.json()
+        try:
+            return optimize_allocation(data.get("attributes") or {}, int(data.get("level") or 1),
+                                       data.get("position") or "CMF", data.get("booster_effects") or {})
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc))
+
+    @router.get("/efootball/squad-plans")
+    def mobile_list_squad_plans(s=Depends(get_db), _: bool = Depends(admin_only)):
+        rows = s.query(SquadPlan).order_by(SquadPlan.created_at.desc()).limit(100).all()
+        return [{"id": row.id, "name": row.name, "formation": row.formation,
+                 "playstyle": row.playstyle, "lineup": json.loads(row.lineup or "[]"),
+                 "notes": row.notes, "created_at": row.created_at.isoformat() if row.created_at else None}
+                for row in rows]
+
+    @router.post("/efootball/squad-plans")
+    async def mobile_save_squad_plan(request: Request, s=Depends(get_db), _: bool = Depends(admin_only)):
+        data = await request.json()
+        name, formation = str(data.get("name") or "").strip(), str(data.get("formation") or "").strip()
+        lineup = data.get("lineup") or []
+        if not name or not formation:
+            raise HTTPException(400, "Informe o nome e a formação.")
+        if not isinstance(lineup, list) or len(lineup) > 18:
+            raise HTTPException(400, "A escalação deve conter até 18 posições.")
+        valid_ids = {p.id for p in s.query(Player).filter(Player.active.is_(True)).all()}
+        seen, clean = set(), []
+        for slot in lineup:
+            if not isinstance(slot, dict):
+                continue
+            pid = int(slot.get("player_id") or 0)
+            if pid and pid not in valid_ids:
+                raise HTTPException(400, "Jogador inativo ou inexistente na escalação.")
+            if pid and pid in seen:
+                raise HTTPException(400, "Um jogador não pode ocupar duas posições.")
+            if pid:
+                seen.add(pid)
+            clean.append({"slot": str(slot.get("slot") or "")[:30], "player_id": pid or None,
+                          "role": str(slot.get("role") or "")[:40]})
+        row = SquadPlan(name=name[:100], formation=formation[:30],
+                        playstyle=str(data.get("playstyle") or "")[:60],
+                        lineup=json.dumps(clean, ensure_ascii=False),
+                        notes=str(data.get("notes") or "")[:2000])
+        s.add(row)
+        log(s, "efootball.squad_plan.created.mobile", f"{name}: {formation}")
+        s.commit()
+        return {"ok": True, "id": row.id}
+
+    @router.delete("/efootball/squad-plans/{plan_id}")
+    def mobile_delete_squad_plan(plan_id: int, s=Depends(get_db), _: bool = Depends(admin_only)):
+        row = s.get(SquadPlan, plan_id)
+        if not row:
+            raise HTTPException(404, "Plano tático não encontrado.")
+        log(s, "efootball.squad_plan.deleted.mobile", row.name)
+        s.delete(row)
+        s.commit()
+        return {"ok": True}
