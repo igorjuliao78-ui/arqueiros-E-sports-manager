@@ -30,6 +30,7 @@ internal fun FederationPage(
     var round by remember { mutableStateOf("RDD 1") }
     var format by remember { mutableStateOf("5x5") }
     var competitionId by remember { mutableStateOf("") }
+    var competitionExpanded by remember { mutableStateOf(false) }
     var scoreFor by remember { mutableStateOf("") }
     var scoreAgainst by remember { mutableStateOf("") }
     var lineup by remember { mutableStateOf("") }
@@ -45,7 +46,21 @@ internal fun FederationPage(
                 Text("NOVO CONFRONTO", color = Color.White, fontWeight = FontWeight.Bold)
                 OutlinedTextField(value = opponent, onValueChange = { opponent = it }, label = { Text("Equipe adversária") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = round, onValueChange = { round = it }, label = { Text("Rodada / RDD") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = competitionId, onValueChange = { competitionId = it }, label = { Text("ID da competição (opcional)") }, modifier = Modifier.fillMaxWidth())
+                Box {
+                    OutlinedButton(onClick = { competitionExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                        val selectedCompetition = competitions.firstOrNull { it.optInt("id").toString() == competitionId }
+                        Text(selectedCompetition?.optString("name") ?: "Sem competição vinculada")
+                    }
+                    DropdownMenu(expanded = competitionExpanded, onDismissRequest = { competitionExpanded = false }) {
+                        DropdownMenuItem(text = { Text("Sem competição") }, onClick = { competitionId = ""; competitionExpanded = false })
+                        competitions.forEach { item ->
+                            DropdownMenuItem(text = { Text(item.optString("name")) }, onClick = {
+                                competitionId = item.optInt("id").toString()
+                                competitionExpanded = false
+                            })
+                        }
+                    }
+                }
                 Text("Formato", color = Color(0xFF9BA2B1), fontSize = 11.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     listOf("3x3", "5x5", "6x6").forEach { item ->
