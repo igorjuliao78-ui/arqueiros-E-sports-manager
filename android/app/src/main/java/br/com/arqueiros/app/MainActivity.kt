@@ -104,7 +104,7 @@ private fun ArqueirosApp() {
         scope.launch {
             busy = true
             try { data = api.request("/api/mobile/bootstrap"); user = data.optJSONObject("user") ?: user; error = "" }
-            catch (e: Exception) { error = e.message ?: "Erro"; if (error.contains("401")) { api.token=null; logged=false } }
+            catch (e: Exception) { error = e.message ?: "Erro"; if (error.contains("401") || error.contains("403")) { api.token=null; logged=false } }
             busy = false
         }
     }
