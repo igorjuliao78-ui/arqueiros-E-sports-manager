@@ -4,6 +4,12 @@ The module reuses the application's SQLAlchemy Base, engine and session factory.
 Attribute values are stored as entered/imported; no undocumented game formula is assumed.
 """
 import json
+import io
+import re
+import unicodedata
+from PIL import Image
+import pytesseract
+from fastapi import UploadFile, File, Form
 from datetime import datetime
 from typing import Optional
 
@@ -165,6 +171,77 @@ def register_efootball(app, Base, engine, SessionLocal, Player, auth, get_db, lo
         s.delete(row)
         s.commit()
         return {"ok": True}
+
+    @app.post("/api/efootball/import-image")
+    async def import_player_image(
+        image: UploadFile = File(...),
+        player_id: int = Form(...),
+        s=Depends(get_db),
+        _: bool = Depends(auth),
+    ):
+        """OCR helper for eFHUB-like player screens. Returns a draft for admin review, never saves silently."""
+        player = s.get(Player, player_id)
+        if not player or not player.active:
+            raise HTTPException(400, "Selecione um jogador ativo.")
+        if image.content_type not in {"image/png", "image/jpeg", "image/webp"}:
+            raise HTTPException(400, "Envie uma imagem PNG, JPG ou WEBP.")
+        raw = await image.read()
+        if len(raw) > 8 * 1024 * 1024:
+            raise HTTPException(413, "A imagem deve ter no máximo 8 MB.")
+        try:
+            picture = Image.open(io.BytesIO(raw)).convert("RGB")
+            text = pytesseract.image_to_string(picture, lang="por+eng")
+        except Exception as exc:
+            raise HTTPException(422, "Não foi possível ler a imagem. Verifique o OCR do servidor: " + str(exc)[:160])
+        def norm(value):
+            value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
+            return re.sub(r"[^a-z0-9]+", " ", value).strip()
+        aliases = {
+            "offensive_awareness": ["talento ofensivo", "consciencia ofensiva"],
+            "ball_control": ["controle de bola"],
+            "dribbling": ["drible"],
+            "tight_possession": ["conducao firme"],
+            "low_pass": ["passe rasteiro"],
+            "lofted_pass": ["passe alto"],
+            "finishing": ["finalizacao"],
+            "heading": ["cabeceio"],
+            "set_piece_taking": ["cobranca de bola parada", "cobranca de falta"],
+            "curl": ["curva"],
+            "defensive_awareness": ["talento defensivo", "consciencia defensiva"],
+            "tackling": ["desarme"],
+            "defensive_engagement": ["dedicacao defensiva"],
+            "speed": ["velocidade"],
+            "acceleration": ["aceleracao"],
+            "kicking_power": ["forca do chute"],
+            "jump": ["salto"],
+            "physical_contact": ["contato fisico"],
+            "balance": ["equilibrio"],
+            "stamina": ["resistencia"],
+            "goalkeeping": ["talento de goleiro"],
+            "gk_catching": ["alcance do goleiro", "defesa do goleiro"],
+            "gk_reflexes": ["reflexos do goleiro"],
+            "gk_reach": ["alcance"],
+        }
+        parsed = {}
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        for line in lines:
+            normalized = norm(line)
+            numbers = re.findall(r"(?<![a-z])\d{1,3}(?![a-z])", normalized)
+            if not numbers:
+                continue
+            value = int(numbers[-1])
+            if value > 120:
+                continue
+            for key, labels in aliases.items():
+                if any(norm(label) in normalized for label in labels):
+                    parsed[key] = value
+                    break
+        return {
+            "ok": True, "player_id": player.id, "player_name": player.name,
+            "attributes": parsed, "raw_text": text[:6000],
+            "review_required": True,
+            "message": "Rascunho de OCR. Confira os valores e salve a build manualmente.",
+        }
 
     @app.get("/api/efootball/recommendations")
     def tactical_recommendations(position: str, s=Depends(get_db), _: bool = Depends(auth)):
