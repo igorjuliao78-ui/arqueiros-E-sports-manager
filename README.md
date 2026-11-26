@@ -125,11 +125,12 @@ O painel web e o aplicativo Android incluem Player Builder, OCR, comparação e 
 - Nível 1 começa com 0 PP; cada nível ganho concede 2 PP.
 - O custo de cada categoria aumenta a cada 4 CP: CP 1–4 custam 1 PP cada; 5–8 custam 2; 9–12 custam 3; 13–16 custam 4.
 - Cada CP aumenta os atributos vinculados à categoria em +1, limitado a 99 antes dos efeitos do booster.
-- Os efeitos do booster são informados separadamente e aplicados depois da progressão, com teto de 120.
+- Os bônus de boosters e manager são informados manualmente como efeitos combinados por atributo; o sistema não consulta uma base proprietária de managers nem presume os bônus de cada técnico.
 - O sistema não calcula o Overall Rating oficial da Konami. O otimizador usa uma heurística explícita de adequação à posição e não deve ser interpretado como OVR oficial.
 - O nível máximo da carta é configurável. O simulador valida o orçamento de PP antes de salvar.
 - Cartas podem ser vinculadas a um integrante da Arqueiros ou cadastradas sem vínculo.
 - OCR aceita imagens PNG/JPG/WEBP de até 8 MB e sempre exige revisão manual dos valores.
+- Não copiamos nem raspamos a base de cartas/imagens de terceiros: as cartas do usuário são cadastradas manualmente ou por OCR, respeitando os direitos sobre os dados do jogo.
 
 ### Referências das regras
 - Konami — [desenvolvimento de jogadores e boosters](https://www.konami.com/efootball/en/page/overview).
